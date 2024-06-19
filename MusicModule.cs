@@ -1,7 +1,4 @@
-﻿using System;
-using System.Numerics;
-using System.Threading.Tasks;
-using Discord.Interactions;
+﻿using Discord.Interactions;
 using Lavalink4NET;
 using Lavalink4NET.DiscordNet;
 using Lavalink4NET.Filters;
@@ -12,13 +9,7 @@ using Lavalink4NET.Tracks;
 using LavaLinkLouieBot.Data;
 using LavaLinkLouieBot.Models;
 using Microsoft.EntityFrameworkCore;
-
-
-
-
-//using LavaLinkLouieBot.Data;
-//using LavaLinkLouieBot.Models;
-using Microsoft.Extensions.Configuration;
+using MongoDB.Driver;
 
 /// <summary>
 ///     Presents some of the main features of the Lavalink4NET-Library.
@@ -27,7 +18,8 @@ using Microsoft.Extensions.Configuration;
 public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext>
 {
     private readonly IAudioService _audioService;
-    private readonly GachiDbContext _dbContext;
+    private readonly SongRepository _songRepository;
+
 
     /// <summary>
     ///     Initializes a new instance of the <see cref="MusicModule"/> class.
@@ -36,41 +28,57 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
     /// <exception cref="ArgumentNullException">
     ///     thrown if the specified <paramref name="audioService"/> is <see langword="null"/>.
     /// </exception>
-    public MusicModule(IAudioService audioService, GachiDbContext dbContext)
+    public MusicModule(IAudioService audioService, SongRepository songRepository)
     {
         ArgumentNullException.ThrowIfNull(audioService);
-        ArgumentNullException.ThrowIfNull(dbContext);
+        ArgumentNullException.ThrowIfNull(songRepository);
 
         _audioService = audioService;
-        _dbContext = dbContext;
+        _songRepository = songRepository;
     }
 
     /// <summary>
-    ///     Adds link to users playlist.
+    /// Adds link to users playlist.
     /// </summary>
     /// <param name="query">Track query</param>
     /// <returns>a task that represents the asynchronous operation</returns>
     [SlashCommand("playlistadd", "Adds a playlist entry", runMode: RunMode.Async)]
     public async Task AddTrackToPlaylist(string playlist, string query)
     {
-        LavalinkTrack? track = await _audioService.Tracks.LoadTrackAsync(query, TrackSearchMode.YouTube).ConfigureAwait(false);
-    
-        if (track != null)
+        try
         {
-            var song = new Song
-            {
-                Name = $"{track.Title}",
-                Link = $"{query}",
-                Playlist = $"{playlist}",
-                UserAdded = Context.User.Username,
-                Created = DateTime.UtcNow
-            };
+            LavalinkTrack? track = await _audioService.Tracks.LoadTrackAsync(query, TrackSearchMode.YouTube).ConfigureAwait(false);
 
-            _dbContext.louie_bot_playlists.Add(song);
-            await _dbContext.SaveChangesAsync();
-            await RespondAsync("Playlist entry added.").ConfigureAwait(false);
+            if (track != null)
+            {
+                var song = new Song
+                {
+                    Name = track.Title,
+                    Link = query,
+                    Playlist = playlist,
+                    UserAdded = Context.User.Username,
+                    Created = DateTime.UtcNow
+                };
+
+                await _songRepository.AddSongAsync(song);
+                await RespondAsync("Playlist entry added.").ConfigureAwait(false);
+            }
+            else
+            {
+                await RespondAsync("Failed to load track.").ConfigureAwait(false);
+            }
+        }
+        catch (MongoWriteException ex)
+        {
+            await RespondAsync($"Failed to add playlist entry: {ex.Message}").ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            await RespondAsync($"An unexpected error occurred: {ex.Message}").ConfigureAwait(false);
         }
     }
+
+
 
     /// <summary>
     ///     Plays all songs from specific playlist.
@@ -80,11 +88,9 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
     [SlashCommand("pp", "Plays all songs from specific playlist", runMode: RunMode.Async)]
     public async Task PlayPlayList(string playlist)
     {
-        var playlistSongs = await _dbContext.louie_bot_playlists
-            .Where(x => x.Playlist.ToLower().Trim() == playlist.ToLower().Trim())
-            .ToListAsync().ConfigureAwait(false);
+        List<Song>? playlistSongs = await _songRepository.GetSongsByPlaylistAsync(playlist.ToLower().Trim()).ConfigureAwait(false);
 
-        playlistSongs = playlistSongs.OrderBy(x => new Random().Next()).ToList();
+        playlistSongs = playlistSongs.OrderBy(x => Guid.NewGuid()).ToList();
 
         await DeferAsync().ConfigureAwait(false);
         var player = await GetPlayerAsync(connectToVoiceChannel: true).ConfigureAwait(false);
@@ -98,10 +104,7 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
         foreach (var track in playlistSongs)
         {
             var position = await player.PlayAsync(track.Link).ConfigureAwait(false);
-            if (position == 0)
-            {
-                await FollowupAsync($"🔈 Playing: {track.Name}").ConfigureAwait(false);
-            }
+            await FollowupAsync($"🔈 Playing: {track.Playlist}").ConfigureAwait(false);
         }
     }
 
