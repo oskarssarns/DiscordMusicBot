@@ -20,7 +20,6 @@ var builder = Host.CreateDefaultBuilder(args)
     {
         IConfiguration configuration = context.Configuration;
 
-        // Configure services
         services.AddSingleton<IConfiguration>(configuration);
         services.AddSingleton<DiscordSocketClient>();
         services.AddSingleton<InteractionService>();
@@ -29,7 +28,6 @@ var builder = Host.CreateDefaultBuilder(args)
         services.AddDbContext<GachiDbContext>(options =>
             options.UseSqlServer(configuration.GetConnectionString("GachiBase")));
 
-        // Add Lavalink services and configure them
         services.AddLavalink();
         services.ConfigureLavalink(options =>
         {
@@ -37,14 +35,11 @@ var builder = Host.CreateDefaultBuilder(args)
             options.BaseAddress = new Uri(server.BaseAddress);
             options.Passphrase = server.Passphrase;
         });
-    })
-    .UseConsoleLifetime();
+    }).UseConsoleLifetime();
 
 var app = builder.Build();
-
 await app.RunAsync();
 
-// Helper method to get Lavalink server configuration
 async Task<LavalinkServerConfig> GetLavalinkServerConfiguration(IConfiguration configuration)
 {
     List<LavalinkServer> servers = await LavaLinkHelper.GetLavalinkServers(configuration["LavaLinkSource"]);
@@ -63,10 +58,4 @@ async Task<LavalinkServerConfig> GetLavalinkServerConfiguration(IConfiguration c
     {
         throw new InvalidOperationException("No online servers found.");
     }
-}
-
-public class LavalinkServerConfig
-{
-    public string BaseAddress { get; set; }
-    public string Passphrase { get; set; }
 }

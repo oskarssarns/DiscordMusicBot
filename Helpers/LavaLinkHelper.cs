@@ -121,32 +121,6 @@ namespace LavaLinkLouieBot.Helpers
             return onlineServers;
         }
 
-        public static async Task SaveServersAsync(IEnumerable<LavalinkServer> servers, GachiDbContext dbContext)
-        {
-            foreach (var server in servers)
-            {
-                server.Password = RemoveQuotes(server.Password);
-
-                var existingServer = await dbContext.lavalink_servers
-                    .FirstOrDefaultAsync(s => s.Host == server.Host && s.Port == server.Port);
-
-                if (existingServer != null)
-                {
-                    existingServer.Password = server.Password;
-                    existingServer.Secure = server.Secure;
-                    existingServer.Version = server.Version;
-
-                    dbContext.lavalink_servers.Update(existingServer);
-                }
-                else
-                {
-                    dbContext.lavalink_servers.Add(server);
-                }
-            }
-
-            await dbContext.SaveChangesAsync();
-        }
-
         public static string RemoveQuotes(string input)
         {
             if (string.IsNullOrEmpty(input)) return input;
