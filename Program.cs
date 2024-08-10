@@ -1,65 +1,72 @@
-﻿using Discord;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using LavaLinkLouieBot.Data;
+using LavaLinkLouieBot.Models;
 using Discord.Interactions;
 using Discord.WebSocket;
 using Lavalink4NET.Extensions;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
+using LavaLinkLouieBot.Helpers;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
-using LavaLinkLouieBot.Data;
-using MongoDB.Driver;
-using System;
-using System.Linq;
+using Microsoft.Extensions.Logging;
 
-var builder = new HostApplicationBuilder(args);
+var builder = Host.CreateDefaultBuilder(args)
+    .ConfigureAppConfiguration((context, config) =>
+    {
+        config.SetBasePath(Directory.GetCurrentDirectory())
+              .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
+    })
+    .ConfigureServices((context, services) =>
+    {
+        IConfiguration configuration = context.Configuration;
 
-IConfiguration configuration = new ConfigurationBuilder()
-    .SetBasePath(Directory.GetCurrentDirectory())
-    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-    .Build();
+        // Configure services
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddSingleton<DiscordSocketClient>();
+        services.AddSingleton<InteractionService>();
+        services.AddHostedService<DiscordClientHost>();
+        services.AddLogging(x => x.AddConsole().SetMinimumLevel(LogLevel.Trace));
+        services.AddDbContext<GachiDbContext>(options =>
+            options.UseSqlServer(configuration.GetConnectionString("GachiBase")));
 
-builder.Services.AddSingleton<IConfiguration>(configuration);
-builder.Services.AddSingleton<DiscordSocketClient>();
-builder.Services.AddSingleton<InteractionService>();
-builder.Services.AddHostedService<DiscordClientHost>();
-builder.Services.AddLavalink();
-builder.Services.ConfigureLavalink(options =>
-{
-    options.BaseAddress = new Uri(configuration["LavaLinkOptions:BaseAddress"]);
-    options.Passphrase = configuration["LavaLinkOptions:PassPhrase"];
-});
-builder.Services.AddLogging(x => x.AddConsole().SetMinimumLevel(LogLevel.Warning));
-
-// MongoDB configuration
-builder.Services.AddSingleton<IMongoClient, MongoClient>(sp =>
-{
-    var settings = configuration.GetSection("MongoDbSettings").Get<MongoDbSettings>();
-    return new MongoClient(settings.ConnectionString);
-});
-builder.Services.AddSingleton(sp =>
-{
-    var settings = configuration.GetSection("MongoDbSettings").Get<MongoDbSettings>();
-    var client = sp.GetRequiredService<IMongoClient>();
-    return client.GetDatabase(settings.DatabaseName);
-});
-
-builder.Services.AddSingleton<SongRepository>();
+        // Add Lavalink services and configure them
+        services.AddLavalink();
+        services.ConfigureLavalink(options =>
+        {
+            var server = GetLavalinkServerConfiguration(configuration).GetAwaiter().GetResult();
+            options.BaseAddress = new Uri(server.BaseAddress);
+            options.Passphrase = server.Passphrase;
+        });
+    })
+    .UseConsoleLifetime();
 
 var app = builder.Build();
 
-try
+await app.RunAsync();
+
+// Helper method to get Lavalink server configuration
+async Task<LavalinkServerConfig> GetLavalinkServerConfiguration(IConfiguration configuration)
 {
-    var client = app.Services.GetRequiredService<IMongoClient>();
-    var databaseNames = client.ListDatabaseNames().ToList();
-    Console.WriteLine("Successfully connected to MongoDB. Available databases:");
-    foreach (var dbName in databaseNames)
+    List<LavalinkServer> servers = await LavaLinkHelper.GetLavalinkServers(configuration["LavaLinkSource"]);
+    List<LavalinkServer> onlineServers = await LavaLinkHelper.GetOnlineLavalinkServers(servers, configuration["TestQuery"], configuration);
+    if (onlineServers.Count > 0)
     {
-        Console.WriteLine($"- {dbName}");
+        var server = onlineServers[0];
+        string scheme = server.Secure.ToLower() == "true" ? "https" : "http";
+        return new LavalinkServerConfig
+        {
+            BaseAddress = $"{scheme}://{server.Host}:{server.Port}",
+            Passphrase = server.Password
+        };
+    }
+    else
+    {
+        throw new InvalidOperationException("No online servers found.");
     }
 }
-catch (Exception ex)
-{
-    Console.WriteLine($"Failed to connect to MongoDB: {ex.Message}");
-}
 
-app.Run();
+public class LavalinkServerConfig
+{
+    public string BaseAddress { get; set; }
+    public string Passphrase { get; set; }
+}

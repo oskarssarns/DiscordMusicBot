@@ -5,9 +5,7 @@ namespace LavaLinkLouieBot.Models
 {
     public class Song
     {
-        [BsonId]
-        [BsonRepresentation(BsonType.ObjectId)]
-        public ObjectId Id { get; set; }
+        public int Id { get; set; }
         public string? Name { get; set; }
         public string? Link { get; set; }
         public string? Playlist { get; set; }
