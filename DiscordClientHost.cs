@@ -5,9 +5,6 @@ using Discord.WebSocket;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using System.Threading;
-using System.Threading.Tasks;
-using System;
 using LavaLinkLouieBot.Helpers;
 using LavaLinkLouieBot.Models;
 
