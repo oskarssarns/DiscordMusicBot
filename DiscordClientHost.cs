@@ -1,14 +1,4 @@
-﻿using System.Reflection;
-using Discord;
-using Discord.Interactions;
-using Discord.WebSocket;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-using LavaLinkLouieBot.Helpers;
-using LavaLinkLouieBot.Models;
-
-internal sealed class DiscordClientHost : IHostedService, IDisposable
+﻿internal sealed class DiscordClientHost : IHostedService, IDisposable
 {
     private readonly DiscordSocketClient _discordSocketClient;
     private readonly InteractionService _interactionService;

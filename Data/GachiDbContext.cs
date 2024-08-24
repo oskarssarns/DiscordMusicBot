@@ -1,7 +1,4 @@
-﻿using LavaLinkLouieBot.Models;
-using Microsoft.EntityFrameworkCore;
-
-namespace LavaLinkLouieBot.Data;
+﻿namespace LavaLinkLouieBot.Data;
 public class GachiDbContext : DbContext
 {
     public GachiDbContext(DbContextOptions<GachiDbContext> options): base(options) { }

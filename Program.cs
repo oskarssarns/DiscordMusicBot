@@ -1,16 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using LavaLinkLouieBot.Data;
-using LavaLinkLouieBot.Models;
-using Discord.Interactions;
-using Discord.WebSocket;
-using Lavalink4NET.Extensions;
-using LavaLinkLouieBot.Helpers;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
-
-var builder = Host.CreateDefaultBuilder(args)
+﻿var builder = Host.CreateDefaultBuilder(args)
     .ConfigureAppConfiguration((context, config) =>
     {
         config.SetBasePath(Directory.GetCurrentDirectory()).AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);

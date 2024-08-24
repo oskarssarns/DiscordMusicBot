@@ -1,17 +1,4 @@
-﻿using Lavalink4NET.Rest.Entities.Tracks;
-using Lavalink4NET;
-using LavaLinkLouieBot.Models;
-using Newtonsoft.Json.Linq;
-using System.Net.Sockets;
-using System.Text.RegularExpressions;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Lavalink4NET.Extensions;
-using Discord.WebSocket;
-using Lavalink4NET.Clients;
-using Lavalink4NET.DiscordNet;
-
-namespace LavaLinkLouieBot.Helpers;
+﻿namespace LavaLinkLouieBot.Helpers;
 public static class LavaLinkHelper
 {
     public async static Task<List<LavalinkServer>> GetLavalinkServers(string source)
