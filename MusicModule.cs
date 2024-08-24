@@ -1,18 +1,4 @@
-﻿using Discord;
-using Discord.Interactions;
-using Lavalink4NET;
-using Lavalink4NET.DiscordNet;
-using Lavalink4NET.Filters;
-using Lavalink4NET.Players;
-using Lavalink4NET.Players.Queued;
-using Lavalink4NET.Players.Vote;
-using Lavalink4NET.Rest.Entities.Tracks;
-using Lavalink4NET.Tracks;
-using LavaLinkLouieBot.Data;
-using LavaLinkLouieBot.Models;
-using Microsoft.EntityFrameworkCore;
-
-[RequireContext(ContextType.Guild)]
+﻿[RequireContext(ContextType.Guild)]
 public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext>
 {
     private readonly IAudioService _audioService;
@@ -73,15 +59,9 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
     {
         List<Song> playlistSongs = await _guildDbContext.louie_bot_playlists.Where(s => s.Playlist == playlist).ToListAsync();
         playlistSongs = playlistSongs.OrderBy(s => new Random().Next()).ToList();
-
         await DeferAsync().ConfigureAwait(false);
         var player = await GetPlayerAsync(connectToVoiceChannel: true).ConfigureAwait(false);
-
-        if (player is null)
-        {
-            await FollowupAsync("No player found!").ConfigureAwait(false);
-            return;
-        }
+        if (player is null) return;
 
         foreach (var track in playlistSongs)
         {
@@ -102,28 +82,12 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
     [SlashCommand("speed", description: "Changes the playback speed (0.5 - 3.0)", runMode: RunMode.Async)]
     public async Task ChangeSpeed(double speed)
     {
-        if (speed < 0.5 || speed > 3.0)
-        {
-            await RespondAsync("Speed out of range: 0.5 - 3.0!").ConfigureAwait(false);
-            return;
-        }
-
+        if (speed < 0.5 || speed > 3.0) return;
         var player = await GetPlayerAsync(connectToVoiceChannel: false).ConfigureAwait(false);
-
-        if (player is null)
-        {
-            await RespondAsync("No player found!").ConfigureAwait(false);
-            return;
-        }
-
-        var timescaleFilterOptions = new TimescaleFilterOptions
-        {
-            Speed = (float?)speed
-        };
-
+        if (player is null) return;
+        var timescaleFilterOptions = new TimescaleFilterOptions{Speed = (float?)speed};
         player.Filters.SetFilter(timescaleFilterOptions);
         await player.Filters.CommitAsync().ConfigureAwait(false);
-        await RespondAsync($"Playback speed set to {speed}x.").ConfigureAwait(false);
     }
 
     [SlashCommand("play", description: "Plays music", runMode: RunMode.Async)]
@@ -133,11 +97,7 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
 
         var player = await GetPlayerAsync(connectToVoiceChannel: true).ConfigureAwait(false);
 
-        if (player is null)
-        {
-            await FollowupAsync("No player found!").ConfigureAwait(false);
-            return;
-        }
+        if (player is null) return;
 
         try
         {
