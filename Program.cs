@@ -13,8 +13,7 @@ using Microsoft.Extensions.Logging;
 var builder = Host.CreateDefaultBuilder(args)
     .ConfigureAppConfiguration((context, config) =>
     {
-        config.SetBasePath(Directory.GetCurrentDirectory())
-              .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
+        config.SetBasePath(Directory.GetCurrentDirectory()).AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
     })
     .ConfigureServices((context, services) =>
     {
@@ -25,9 +24,7 @@ var builder = Host.CreateDefaultBuilder(args)
         services.AddSingleton<InteractionService>();
         services.AddHostedService<DiscordClientHost>();
         services.AddLogging(x => x.AddConsole().SetMinimumLevel(LogLevel.Trace));
-        services.AddDbContext<GachiDbContext>(options =>
-            options.UseSqlServer(configuration.GetConnectionString("GachiBase")));
-
+        services.AddDbContext<GachiDbContext>(options => options.UseSqlServer(configuration.GetConnectionString("GachiBase")));
         services.AddLavalink();
         services.ConfigureLavalink(options =>
         {

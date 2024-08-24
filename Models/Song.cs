@@ -1,7 +1,4 @@
-﻿using MongoDB.Bson.Serialization.Attributes;
-using MongoDB.Bson;
-
-namespace LavaLinkLouieBot.Models
+﻿namespace LavaLinkLouieBot.Models
 {
     public class Song
     {

@@ -11,7 +11,6 @@ using Lavalink4NET.Tracks;
 using LavaLinkLouieBot.Data;
 using LavaLinkLouieBot.Models;
 using Microsoft.EntityFrameworkCore;
-using MongoDB.Driver;
 
 [RequireContext(ContextType.Guild)]
 public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext>
