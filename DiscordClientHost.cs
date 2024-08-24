@@ -19,6 +19,7 @@ internal sealed class DiscordClientHost : IHostedService, IDisposable
     private readonly IConfiguration _configuration;
     private readonly ILogger<DiscordClientHost> _logger;
     private Timer _timer;
+    private TaskCompletionSource<bool> _readyTcs;
 
     public DiscordClientHost(
         DiscordSocketClient discordSocketClient,
@@ -42,9 +43,11 @@ internal sealed class DiscordClientHost : IHostedService, IDisposable
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
+        _readyTcs = new TaskCompletionSource<bool>();
         _discordSocketClient.InteractionCreated += InteractionCreated;
         _discordSocketClient.Ready += ClientReady;
 
+        _logger.LogInformation("Starting Discord client...");
         await _discordSocketClient
             .LoginAsync(TokenType.Bot, _configuration["BotToken"])
             .ConfigureAwait(false);
@@ -52,6 +55,23 @@ internal sealed class DiscordClientHost : IHostedService, IDisposable
         await _discordSocketClient
             .StartAsync()
             .ConfigureAwait(false);
+
+        _logger.LogInformation("Waiting for Discord client to be ready...");
+        try
+        {
+            await _readyTcs.Task.WaitAsync(TimeSpan.FromSeconds(180), cancellationToken);
+            _logger.LogInformation("Discord client is ready.");
+        }
+        catch (TimeoutException ex)
+        {
+            _logger.LogError(ex, "Timed out while waiting for Discord client being ready.");
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "An error occurred while waiting for Discord client being ready.");
+            throw;
+        }
 
         // Initialize the timer to check Lavalink status every 5 minutes
         _timer = new Timer(CheckAndReconnectLavalink, null, TimeSpan.Zero, TimeSpan.FromMinutes(5));
@@ -79,6 +99,8 @@ internal sealed class DiscordClientHost : IHostedService, IDisposable
 
     private async Task ClientReady()
     {
+        _readyTcs.SetResult(true);
+
         await _interactionService
             .AddModulesAsync(Assembly.GetExecutingAssembly(), _serviceProvider)
             .ConfigureAwait(false);
@@ -133,10 +155,10 @@ internal sealed class DiscordClientHost : IHostedService, IDisposable
         }
     }
 
-
     private async Task ReconnectLavalinkAsync()
     {
         var newConfig = await GetLavalinkServerConfiguration(_configuration);
+        // Implement the logic to reconnect to the new Lavalink server
     }
 
     private async Task<LavalinkServerConfig> GetLavalinkServerConfiguration(IConfiguration configuration)
