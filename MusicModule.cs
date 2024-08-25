@@ -11,14 +11,14 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
         _audioService = audioService;
         _guildDbContext = gachiDbContext;
     }
+
     #region Commands
-    [SlashCommand("playlistadd", "Adds a playlist entry ", runMode: RunMode.Async)]
+    [SlashCommand("playlistadd", "Adds a playlist entry", runMode: RunMode.Async)]
     public async Task AddTrackToPlaylist(string playlist, string query)
     {
         try
         {
             LavalinkTrack? track = await _audioService.Tracks.LoadTrackAsync(query, TrackSearchMode.YouTube).ConfigureAwait(false);
-
             if (track != null)
             {
                 var song = new Song
@@ -30,9 +30,7 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
                     Created = DateTime.UtcNow
                 };
 
-                bool trackExists = await _guildDbContext.louie_bot_playlists.AnyAsync(s => s.Link == query).ConfigureAwait(false);
-
-                if (!trackExists)
+                if (!await _guildDbContext.louie_bot_playlists.AnyAsync(s => s.Link == query).ConfigureAwait(false))
                 {
                     await _guildDbContext.louie_bot_playlists.AddAsync(song);
                     await _guildDbContext.SaveChangesAsync().ConfigureAwait(false);
@@ -40,7 +38,7 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
                 }
                 else
                 {
-                    await RespondAsync("Track is already in database, you have great taste!").ConfigureAwait(false);
+                    await RespondAsync("Track is already in database!").ConfigureAwait(false);
                 }
             }
             else
@@ -55,9 +53,9 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
     }
 
     [SlashCommand("pp", "Plays all songs from specific playlist", runMode: RunMode.Async)]
-    public async Task PlayPlayList(string playlist)
+    public async Task PlayPlaylist(string playlist)
     {
-        List<Song> playlistSongs = await _guildDbContext.louie_bot_playlists.Where(s => s.Playlist == playlist).ToListAsync();
+        var playlistSongs = await _guildDbContext.louie_bot_playlists.Where(s => s.Playlist == playlist).ToListAsync();
         playlistSongs = playlistSongs.OrderBy(s => new Random().Next()).ToList();
         await DeferAsync().ConfigureAwait(false);
         var player = await GetPlayerAsync(connectToVoiceChannel: true).ConfigureAwait(false);
@@ -65,67 +63,43 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
 
         foreach (var track in playlistSongs)
         {
-            var position = await player.PlayAsync(track.Link).ConfigureAwait(false);
+            await player.PlayAsync(track.Link).ConfigureAwait(false);
         }
         await FollowupAsync($"🔈 Playing ♂: {playlistSongs[0].Playlist} playlist").ConfigureAwait(false);
     }
 
-    [SlashCommand("disconnect", "Disconnects from the current voice channel connected to", runMode: RunMode.Async)]
+    [SlashCommand("disconnect", "Disconnects from voice channel", runMode: RunMode.Async)]
     public async Task Disconnect()
     {
-        VoteLavalinkPlayer? player = await GetPlayerAsync().ConfigureAwait(false);
+        var player = await GetPlayerAsync().ConfigureAwait(false);
         if (player is null) return;
         await player.DisconnectAsync().ConfigureAwait(false);
         await RespondAsync("Disconnected.").ConfigureAwait(false);
     }
 
-    [SlashCommand("speed", description: "Changes the playback speed (0.5 - 3.0)", runMode: RunMode.Async)]
+    [SlashCommand("speed", "Changes playback speed (0.5 - 3.0)", runMode: RunMode.Async)]
     public async Task ChangeSpeed(double speed)
     {
-        if (speed < 0.5 || speed > 3.0) return;
+        if (speed is < 0.5 or > 3.0) return;
         var player = await GetPlayerAsync(connectToVoiceChannel: false).ConfigureAwait(false);
         if (player is null) return;
-        var timescaleFilterOptions = new TimescaleFilterOptions{Speed = (float?)speed};
-        player.Filters.SetFilter(timescaleFilterOptions);
+        player.Filters.SetFilter(new TimescaleFilterOptions { Speed = (float?)speed });
         await player.Filters.CommitAsync().ConfigureAwait(false);
     }
 
-    [SlashCommand("play", description: "Plays music", runMode: RunMode.Async)]
+    [SlashCommand("play", "Plays music", runMode: RunMode.Async)]
     public async Task Play(string query)
     {
         await DeferAsync().ConfigureAwait(false);
-
         var player = await GetPlayerAsync(connectToVoiceChannel: true).ConfigureAwait(false);
-
         if (player is null) return;
 
         try
         {
-            LavalinkTrack? track;
-            if (query.Contains("&list="))
-            {
-                TrackLoadResult playlist = await _audioService.Tracks.LoadTracksAsync(query, TrackSearchMode.YouTube).ConfigureAwait(false);
-                if (!playlist.Tracks.Any())
-                {
-                    await FollowupAsync("No results found in the playlist.").ConfigureAwait(false);
-                    return;
-                }
-
-                track = playlist.Tracks.First();
-                foreach (var t in playlist.Tracks.Skip(1))
-                {
-                    await player.Queue.AddAsync(new TrackQueueItem(new TrackReference(t)), CancellationToken.None).ConfigureAwait(false);
-                }
-            }
-            else
-            {
-                track = await _audioService.Tracks.LoadTrackAsync(query, TrackSearchMode.YouTube).ConfigureAwait(false);
-                if (track == null)
-                {
-                    await FollowupAsync("No results.").ConfigureAwait(false);
-                    return;
-                }
-            }
+            LavalinkTrack? track = query.Contains("&list=")
+                ? (await _audioService.Tracks.LoadTracksAsync(query, TrackSearchMode.YouTube).ConfigureAwait(false)).Tracks.First()
+                : await _audioService.Tracks.LoadTrackAsync(query, TrackSearchMode.YouTube).ConfigureAwait(false);
+            if (track is null) return;
 
             var position = await player.PlayAsync(track).ConfigureAwait(false);
             var message = position == 0 ? $"🔈 Playing: {track.Title}" : $"🔈 Added to queue: {track.Title}";
@@ -140,85 +114,46 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Exception occurred: {ex.Message}");
             await FollowupAsync($"Error loading track: {ex.Message}").ConfigureAwait(false);
         }
     }
 
-    [SlashCommand("radio", description: "Plays gachi radio", runMode: RunMode.Async)]
+    [SlashCommand("radio", "Plays gachi radio", runMode: RunMode.Async)]
     public async Task Radio()
     {
-        string gachiRadio = "https://www.youtube.com/watch?v=akHAQD3o1NA";
-
+        const string gachiRadio = "https://www.youtube.com/watch?v=akHAQD3o1NA";
         await DeferAsync().ConfigureAwait(false);
-
         var player = await GetPlayerAsync(connectToVoiceChannel: true).ConfigureAwait(false);
+        if (player is null) return;
 
-        if (player is null)
-        {
-            await FollowupAsync("No player found!").ConfigureAwait(false);
-            return;
-        }
-
-        LavalinkTrack? track = await _audioService.Tracks.LoadTrackAsync(gachiRadio, TrackSearchMode.YouTube).ConfigureAwait(false);
-        int? position = await player.PlayAsync(track).ConfigureAwait(false);
-        if (position == 0)
-        {
-            await FollowupAsync($"🔈 Playing: {track.Title}").ConfigureAwait(false);
-        }
+        var track = await _audioService.Tracks.LoadTrackAsync(gachiRadio, TrackSearchMode.YouTube).ConfigureAwait(false);
+        await player.PlayAsync(track).ConfigureAwait(false);
+        await FollowupAsync($"🔈 Playing: {track.Title}").ConfigureAwait(false);
     }
 
-    [SlashCommand("stop", description: "Stops the current track", runMode: RunMode.Async)]
+    [SlashCommand("stop", "Stops the current track", runMode: RunMode.Async)]
     public async Task Stop()
     {
         var player = await GetPlayerAsync(connectToVoiceChannel: false);
-        if (player.CurrentItem is null || player is null) return;
+        if (player is null || player.CurrentItem is null) return;
         await player.StopAsync().ConfigureAwait(false);
         await player.DisconnectAsync().ConfigureAwait(false);
     }
 
-    [SlashCommand("volume", description: "Sets the player volume (0 - 1000%)", runMode: RunMode.Async)]
+    [SlashCommand("volume", "Sets player volume (0 - 1000%)", runMode: RunMode.Async)]
     public async Task Volume(int volume = 100)
     {
-        if (volume is > 1000 or < 0)
+        if (volume is < 0 or > 1000)
         {
             await RespondAsync("Volume out of range: 0% - 1000%!").ConfigureAwait(false);
             return;
         }
 
         var player = await GetPlayerAsync(connectToVoiceChannel: false).ConfigureAwait(false);
-
-        if (player is null)
-        {
-            return;
-        }
+        if (player is null) return;
 
         await player.SetVolumeAsync(volume / 100f).ConfigureAwait(false);
         await RespondAsync($"Volume updated: {volume}%").ConfigureAwait(false);
-    }
-
-    [SlashCommand("skip", description: "Skips the current track", runMode: RunMode.Async)]
-    public async Task Skip()
-    {
-        var player = await GetPlayerAsync(connectToVoiceChannel: false);
-        if (player.CurrentItem is null || player is null) return;
-        await player.SkipAsync().ConfigureAwait(false);
-    }
-
-    [SlashCommand("pause", description: "Pauses the player.", runMode: RunMode.Async)]
-    public async Task PauseAsync()
-    {
-        var player = await GetPlayerAsync(connectToVoiceChannel: false);
-        if (player.State is PlayerState || player is null) return;
-        await player.PauseAsync().ConfigureAwait(false);
-    }
-
-    [SlashCommand("resume", description: "Resumes the player.", runMode: RunMode.Async)]
-    public async Task ResumeAsync()
-    {
-        var player = await GetPlayerAsync(connectToVoiceChannel: false);
-        if (player.State is not PlayerState.Paused || player is null) return;
-        await player.ResumeAsync().ConfigureAwait(false);
     }
     #endregion
     #region Buttons
@@ -229,14 +164,14 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
         var player = await GetPlayerAsync(connectToVoiceChannel: false).ConfigureAwait(false);
         if (player is null) return;
         await player.PauseAsync().ConfigureAwait(false);
+
         var components = new ComponentBuilder()
             .WithButton("Resume", "resume_button", ButtonStyle.Primary)
             .WithButton("Skip", "skip_button", ButtonStyle.Secondary)
             .WithButton("Repeat", "repeat_button", ButtonStyle.Primary)
             .WithButton("Stop", "stop_button", ButtonStyle.Danger).Build();
 
-        var message = await GetOriginalResponseAsync();
-        await message.ModifyAsync(msg => msg.Components = components).ConfigureAwait(false);
+        await (await GetOriginalResponseAsync()).ModifyAsync(msg => msg.Components = components).ConfigureAwait(false);
     }
 
     [ComponentInteraction("resume_button")]
@@ -247,13 +182,14 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
         if (player is null) return;
 
         await player.ResumeAsync().ConfigureAwait(false);
+
         var components = new ComponentBuilder()
             .WithButton("Pause", "pause_button", ButtonStyle.Primary)
             .WithButton("Skip", "skip_button", ButtonStyle.Secondary)
             .WithButton("Repeat", "repeat_button", ButtonStyle.Primary)
             .WithButton("Stop", "stop_button", ButtonStyle.Danger).Build();
-        var message = await GetOriginalResponseAsync();
-        await message.ModifyAsync(msg => msg.Components = components).ConfigureAwait(false);
+
+        await (await GetOriginalResponseAsync()).ModifyAsync(msg => msg.Components = components).ConfigureAwait(false);
     }
 
     [ComponentInteraction("skip_button")]
@@ -270,6 +206,8 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
         var player = await GetPlayerAsync(connectToVoiceChannel: false).ConfigureAwait(false);
         if (player is null) return;
         await player.StopAsync().ConfigureAwait(false);
+        await player.DisconnectAsync().ConfigureAwait(false);
+        var components = new ComponentBuilder().RemoveComponentsOfType;
     }
 
     [ComponentInteraction("repeat_button")]
