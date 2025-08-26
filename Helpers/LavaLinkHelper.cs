@@ -17,9 +17,9 @@ public static class LavaLinkHelper
         List<LavalinkServer> servers = new List<LavalinkServer>();
         bool skipFirst = true;
 
-        foreach (var doc in jsonResponse["docs"])
+        foreach (var doc in jsonResponse["docs"]!)
         {
-            string text = doc["text"].ToString();
+            string text = doc["text"]!.ToString();
             if (text.Contains("Host :"))
             {
                 if (skipFirst)
@@ -67,7 +67,7 @@ public static class LavaLinkHelper
         try
         {
             using TcpClient tcpClient = new TcpClient();
-            await tcpClient.ConnectAsync(server.Host, int.Parse(server.Port));
+            await tcpClient.ConnectAsync(server.Host!, int.Parse(server.Port!));
             return tcpClient.Connected;
         }
         catch
@@ -86,7 +86,7 @@ public static class LavaLinkHelper
             services.AddSingleton<IDiscordClientWrapper, DiscordClientWrapper>();
             services.AddLavalink();
 
-            string scheme = server.Secure.ToLower() == "true" ? "https" : "http";
+            string scheme = server.Secure!.ToLower() == "true" ? "https" : "http";
             string baseAddress = $"{scheme}://{server.Host}:{server.Port}";
 
             services.ConfigureLavalink(options =>
@@ -130,13 +130,13 @@ public static class LavaLinkHelper
 
     public static async Task<LavalinkServerConfig> GetLavalinkServerConfiguration(IConfiguration configuration)
     {
-        List<LavaLinkLouieBot.Helpers.LavalinkServer> servers = await LavaLinkHelper.GetLavalinkServers(configuration["LavaLinkSource"]);
-        List<LavaLinkLouieBot.Helpers.LavalinkServer> onlineServers = await LavaLinkHelper.GetOnlineLavalinkServers(servers, configuration["TestQuery"], configuration);
+        List<LavalinkServer> servers = await LavaLinkHelper.GetLavalinkServers(configuration["LavaLinkSource"]!);
+        List<LavalinkServer> onlineServers = await LavaLinkHelper.GetOnlineLavalinkServers(servers, configuration["TestQuery"]!, configuration);
         if (onlineServers.Count > 0)
         {
             var server = onlineServers[0];
-            string scheme = server.Secure.ToLower() == "true" ? "https" : "http";
-            return new LavaLinkLouieBot.Helpers.LavalinkServerConfig
+            string scheme = server.Secure!.ToLower() == "true" ? "https" : "http";
+            return new LavalinkServerConfig
             {
                 BaseAddress = $"{scheme}://{server.Host}:{server.Port}",
                 Passphrase = server.Password
@@ -151,15 +151,15 @@ public static class LavaLinkHelper
 
 public class LavalinkServer
 {
-    public string Host { get; set; }
-    public string Port { get; set; }
-    public string Password { get; set; }
-    public string Secure { get; set; }
-    public string Version { get; set; }
+    public string? Host { get; set; }
+    public string? Port { get; set; }
+    public string? Password { get; set; }
+    public string? Secure { get; set; }
+    public string? Version { get; set; }
 }
 
 public class LavalinkServerConfig
 {
-    public string BaseAddress { get; set; }
-    public string Passphrase { get; set; }
+    public string? BaseAddress { get; set; }
+    public string? Passphrase { get; set; }
 }

@@ -63,7 +63,7 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
 
         foreach (var track in playlistSongs)
         {
-            await player.PlayAsync(track.Link).ConfigureAwait(false);
+            await player.PlayAsync(track.Link!).ConfigureAwait(false);
         }
         await FollowupAsync($"🔈 Playing ♂: {playlistSongs[0].Playlist} playlist").ConfigureAwait(false);
     }
@@ -76,7 +76,7 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
         await player.DisconnectAsync().ConfigureAwait(false);
         await RespondAsync("Disconnected.").ConfigureAwait(false);
     }
-
+    
     [SlashCommand("speed", "Changes playback speed (0.5 - 3.0)", runMode: RunMode.Async)]
     public async Task ChangeSpeed(double speed)
     {
@@ -127,8 +127,8 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
         if (player is null) return;
 
         var track = await _audioService.Tracks.LoadTrackAsync(gachiRadio, TrackSearchMode.YouTube).ConfigureAwait(false);
-        await player.PlayAsync(track).ConfigureAwait(false);
-        await FollowupAsync($"🔈 Playing: {track.Title}").ConfigureAwait(false);
+        await player.PlayAsync(track!).ConfigureAwait(false);
+        await FollowupAsync($"🔈 Playing: {track!.Title}").ConfigureAwait(false);
     }
 
     [SlashCommand("stop", "Stops the current track", runMode: RunMode.Async)]

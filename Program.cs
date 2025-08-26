@@ -5,7 +5,7 @@ var builder = Host.CreateDefaultBuilder(args)
     {
         config.SetBasePath(Directory.GetCurrentDirectory()).AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
     })
-    .ConfigureServices((context, services) =>
+    .ConfigureServices(async (context, services) =>
     {
         IConfiguration configuration = context.Configuration;
 
@@ -40,8 +40,8 @@ var builder = Host.CreateDefaultBuilder(args)
         services.AddLavalink();
         services.ConfigureLavalink(options =>
         {
-            var server = GetLavalinkServerConfiguration(configuration).GetAwaiter().GetResult();
-            options.BaseAddress = new Uri(server.BaseAddress);
+            var server = Task.Run(() => GetLavalinkServerConfiguration(configuration)).GetAwaiter().GetResult();
+            options.BaseAddress = new Uri(server.BaseAddress!);
             options.Passphrase = server.Passphrase;
         });
         services.AddHostedService<DiscordClientHost>();
@@ -52,12 +52,12 @@ await app.RunAsync();
 
 async Task<LavaLinkLouieBot.Helpers.LavalinkServerConfig> GetLavalinkServerConfiguration(IConfiguration configuration)
 {
-    List<LavaLinkLouieBot.Helpers.LavalinkServer> servers = await LavaLinkHelper.GetLavalinkServers(configuration["LavaLinkSource"]);
-    List<LavaLinkLouieBot.Helpers.LavalinkServer> onlineServers = await LavaLinkHelper.GetOnlineLavalinkServers(servers, configuration["TestQuery"], configuration);
+    var servers = await LavaLinkHelper.GetLavalinkServers(configuration["LavaLinkSource"]!);
+    var onlineServers = await LavaLinkHelper.GetOnlineLavalinkServers(servers, configuration["TestQuery"]!, configuration);
     if (onlineServers.Count > 0)
     {
         var server = onlineServers[0];
-        string scheme = server.Secure.ToLower() == "true" ? "https" : "http";
+        string scheme = server.Secure!.ToLower() == "true" ? "https" : "http";
         return new LavaLinkLouieBot.Helpers.LavalinkServerConfig
         {
             BaseAddress = $"{scheme}://{server.Host}:{server.Port}",
