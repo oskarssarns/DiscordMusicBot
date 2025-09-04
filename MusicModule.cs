@@ -2,14 +2,14 @@
 public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext>
 {
     private readonly IAudioService _audioService;
-    private readonly GachiDbContext _guildDbContext;
+    private readonly MusicDbContext _guildDbContext;
+    private readonly MusicMessageService _messageService;
 
-    public MusicModule(IAudioService audioService, GachiDbContext gachiDbContext)
+    public MusicModule(IAudioService audioService, MusicDbContext guildDbContext, MusicMessageService messageService)
     {
-        ArgumentNullException.ThrowIfNull(audioService);
-        ArgumentNullException.ThrowIfNull(gachiDbContext);
-        _audioService = audioService;
-        _guildDbContext = gachiDbContext;
+        _audioService = audioService ?? throw new ArgumentNullException(nameof(audioService));
+        _guildDbContext = guildDbContext ?? throw new ArgumentNullException(nameof(guildDbContext));
+        _messageService = messageService ?? throw new ArgumentNullException(nameof(messageService));
     }
 
     #region Commands
@@ -18,7 +18,7 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
     {
         try
         {
-            LavalinkTrack? track = await _audioService.Tracks.LoadTrackAsync(query, TrackSearchMode.YouTube).ConfigureAwait(false);
+            LavalinkTrack? track = await _audioService.Tracks.LoadTrackAsync(query, TrackSearchMode.YouTube);
             if (track != null)
             {
                 var song = new Song
@@ -30,91 +30,103 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
                     Created = DateTime.UtcNow
                 };
 
-                if (!await _guildDbContext.louie_bot_playlists.AnyAsync(s => s.Link == query).ConfigureAwait(false))
+                if (!await _guildDbContext.louie_bot_playlists.AnyAsync(s => s.Link == query))
                 {
                     await _guildDbContext.louie_bot_playlists.AddAsync(song);
-                    await _guildDbContext.SaveChangesAsync().ConfigureAwait(false);
-                    await RespondAsync($"Playlist entry added : {track.Title}").ConfigureAwait(false);
+                    await _guildDbContext.SaveChangesAsync();
+                    await RespondAsync($"Playlist entry added : {track.Title}");
                 }
                 else
                 {
-                    await RespondAsync("Track is already in database!").ConfigureAwait(false);
+                    await RespondAsync("Track is already in database!");
                 }
             }
             else
             {
-                await RespondAsync("Failed to load track.").ConfigureAwait(false);
+                await RespondAsync("Failed to load track.");
             }
         }
         catch (Exception ex)
         {
-            await RespondAsync($"An unexpected error occurred: {ex.Message}").ConfigureAwait(false);
+            await RespondAsync($"An unexpected error occurred: {ex.Message}");
         }
     }
 
     [SlashCommand("pp", "Plays all songs from specific playlist", runMode: RunMode.Async)]
     public async Task PlayPlaylist(string playlist)
     {
-        var playlistSongs = await _guildDbContext.louie_bot_playlists.Where(s => s.Playlist == playlist).ToListAsync();
-        playlistSongs = playlistSongs.OrderBy(s => new Random().Next()).ToList();
-        await DeferAsync().ConfigureAwait(false);
-        var player = await GetPlayerAsync(connectToVoiceChannel: true).ConfigureAwait(false);
-        if (player is null) return;
+        var playlistSongs = await _guildDbContext.louie_bot_playlists
+            .Where(s => s.Playlist == playlist)
+            .ToListAsync();
+
+        playlistSongs = playlistSongs.OrderBy(_ => Guid.NewGuid()).ToList();
+
+        await DeferAsync();
+        var player = await GetPlayerAsync(connectToVoiceChannel: true);
+        if (player is null || !playlistSongs.Any()) return;
 
         foreach (var track in playlistSongs)
         {
-            await player.PlayAsync(track.Link!).ConfigureAwait(false);
+            await player.PlayAsync(track.Link!);
         }
-        await FollowupAsync($"🔈 Playing ♂: {playlistSongs[0].Playlist} playlist").ConfigureAwait(false);
+
+        var components = MusicControlsBuilder.BuildControls(isPaused: false, isRepeating: false);
+        await _messageService.SendOrUpdateAsync(Context, $"🔈 Playing ♂: {playlistSongs[0].Playlist} playlist", components);
     }
 
     [SlashCommand("disconnect", "Disconnects from voice channel", runMode: RunMode.Async)]
     public async Task Disconnect()
     {
-        var player = await GetPlayerAsync().ConfigureAwait(false);
+        var player = await GetPlayerAsync();
         if (player is null) return;
-        await player.DisconnectAsync().ConfigureAwait(false);
-        await RespondAsync("Disconnected.").ConfigureAwait(false);
+
+        await player.DisconnectAsync();
+        await _messageService.SendOrUpdateAsync(Context, "🔌 Disconnected.", new ComponentBuilder().Build());
+        _messageService.Clear(Context.Guild.Id);
     }
-    
+
     [SlashCommand("speed", "Changes playback speed (0.5 - 3.0)", runMode: RunMode.Async)]
     public async Task ChangeSpeed(double speed)
     {
-        if (speed is < 0.5 or > 3.0) return;
-        var player = await GetPlayerAsync(connectToVoiceChannel: false).ConfigureAwait(false);
+        if (speed is < 0.5 or > 3.0)
+        {
+            await RespondAsync("Speed must be between 0.5 and 3.0");
+            return;
+        }
+
+        var player = await GetPlayerAsync(false);
         if (player is null) return;
-        player.Filters.SetFilter(new TimescaleFilterOptions { Speed = (float?)speed });
-        await player.Filters.CommitAsync().ConfigureAwait(false);
+
+        player.Filters.SetFilter(new TimescaleFilterOptions { Speed = (float)speed });
+        await player.Filters.CommitAsync();
+        await RespondAsync($"Playback speed set to {speed:0.0}x");
     }
 
     [SlashCommand("play", "Plays music", runMode: RunMode.Async)]
     public async Task Play(string query)
     {
-        await DeferAsync().ConfigureAwait(false);
-        var player = await GetPlayerAsync(connectToVoiceChannel: true).ConfigureAwait(false);
+        await DeferAsync();
+
+        var player = await GetPlayerAsync(connectToVoiceChannel: true);
         if (player is null) return;
 
         try
         {
             LavalinkTrack? track = query.Contains("&list=")
-                ? (await _audioService.Tracks.LoadTracksAsync(query, TrackSearchMode.YouTube).ConfigureAwait(false)).Tracks.First()
-                : await _audioService.Tracks.LoadTrackAsync(query, TrackSearchMode.YouTube).ConfigureAwait(false);
+                ? (await _audioService.Tracks.LoadTracksAsync(query, TrackSearchMode.YouTube)).Tracks.First()
+                : await _audioService.Tracks.LoadTrackAsync(query, TrackSearchMode.YouTube);
+
             if (track is null) return;
 
-            var position = await player.PlayAsync(track).ConfigureAwait(false);
+            var position = await player.PlayAsync(track);
             var message = position == 0 ? $"🔈 Playing: {track.Title}" : $"🔈 Added to queue: {track.Title}";
 
-            var builder = new ComponentBuilder()
-                .WithButton("Pause", "pause_button", ButtonStyle.Primary)
-                .WithButton("Skip", "skip_button", ButtonStyle.Secondary)
-                .WithButton("Repeat", "repeat_button", ButtonStyle.Primary)
-                .WithButton("Stop", "stop_button", ButtonStyle.Danger);
-
-            await FollowupAsync(message, components: builder.Build()).ConfigureAwait(false);
+            var components = MusicControlsBuilder.BuildControls(isPaused: false, isRepeating: false);
+            await _messageService.SendOrUpdateAsync(Context, message, components);
         }
         catch (Exception ex)
         {
-            await FollowupAsync($"Error loading track: {ex.Message}").ConfigureAwait(false);
+            await FollowupAsync($"Error loading track: {ex.Message}");
         }
     }
 
@@ -122,22 +134,30 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
     public async Task Radio()
     {
         const string gachiRadio = "https://www.youtube.com/watch?v=akHAQD3o1NA";
-        await DeferAsync().ConfigureAwait(false);
-        var player = await GetPlayerAsync(connectToVoiceChannel: true).ConfigureAwait(false);
+        await DeferAsync();
+
+        var player = await GetPlayerAsync(connectToVoiceChannel: true);
         if (player is null) return;
 
-        var track = await _audioService.Tracks.LoadTrackAsync(gachiRadio, TrackSearchMode.YouTube).ConfigureAwait(false);
-        await player.PlayAsync(track!).ConfigureAwait(false);
-        await FollowupAsync($"🔈 Playing: {track!.Title}").ConfigureAwait(false);
+        var track = await _audioService.Tracks.LoadTrackAsync(gachiRadio, TrackSearchMode.YouTube);
+        if (track is null) return;
+
+        await player.PlayAsync(track);
+        var components = MusicControlsBuilder.BuildControls(isPaused: false, isRepeating: false);
+        await _messageService.SendOrUpdateAsync(Context, $"🔈 Playing: {track.Title}", components);
     }
 
     [SlashCommand("stop", "Stops the current track", runMode: RunMode.Async)]
     public async Task Stop()
     {
-        var player = await GetPlayerAsync(connectToVoiceChannel: false);
+        var player = await GetPlayerAsync(false);
         if (player is null || player.CurrentItem is null) return;
-        await player.StopAsync().ConfigureAwait(false);
-        await player.DisconnectAsync().ConfigureAwait(false);
+
+        await player.StopAsync();
+        await player.DisconnectAsync();
+
+        await _messageService.SendOrUpdateAsync(Context, "⏹ Stopped playback", new ComponentBuilder().Build());
+        _messageService.Clear(Context.Guild.Id);
     }
 
     [SlashCommand("volume", "Sets player volume (0 - 1000%)", runMode: RunMode.Async)]
@@ -145,85 +165,90 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
     {
         if (volume is < 0 or > 1000)
         {
-            await RespondAsync("Volume out of range: 0% - 1000%!").ConfigureAwait(false);
+            await RespondAsync("Volume out of range: 0% - 1000%!");
             return;
         }
 
-        var player = await GetPlayerAsync(connectToVoiceChannel: false).ConfigureAwait(false);
+        var player = await GetPlayerAsync(false);
         if (player is null) return;
 
-        await player.SetVolumeAsync(volume / 100f).ConfigureAwait(false);
-        await RespondAsync($"Volume updated: {volume}%").ConfigureAwait(false);
+        await player.SetVolumeAsync(volume / 100f);
+        await RespondAsync($"Volume updated: {volume}%");
     }
     #endregion
     #region Buttons
     [ComponentInteraction("pause_button")]
     public async Task HandlePauseButton()
     {
-        await DeferAsync().ConfigureAwait(false);
-        var player = await GetPlayerAsync(connectToVoiceChannel: false).ConfigureAwait(false);
+        await DeferAsync();
+
+        var player = await GetPlayerAsync(false);
         if (player is null) return;
-        await player.PauseAsync().ConfigureAwait(false);
 
-        var components = new ComponentBuilder()
-            .WithButton("Resume", "resume_button", ButtonStyle.Primary)
-            .WithButton("Skip", "skip_button", ButtonStyle.Secondary)
-            .WithButton("Repeat", "repeat_button", ButtonStyle.Primary)
-            .WithButton("Stop", "stop_button", ButtonStyle.Danger).Build();
+        await player.PauseAsync();
+        var components = MusicControlsBuilder.BuildControls(isPaused: true, isRepeating: player.RepeatMode == TrackRepeatMode.Track);
 
-        await (await GetOriginalResponseAsync()).ModifyAsync(msg => msg.Components = components).ConfigureAwait(false);
+        await (await GetOriginalResponseAsync()).ModifyAsync(msg => msg.Components = components);
     }
 
     [ComponentInteraction("resume_button")]
     public async Task HandleResumeButton()
     {
-        await DeferAsync().ConfigureAwait(false);
-        var player = await GetPlayerAsync(connectToVoiceChannel: false).ConfigureAwait(false);
+        await DeferAsync();
+
+        var player = await GetPlayerAsync(false);
         if (player is null) return;
 
-        await player.ResumeAsync().ConfigureAwait(false);
+        await player.ResumeAsync();
+        var components = MusicControlsBuilder.BuildControls(isPaused: false, isRepeating: player.RepeatMode == TrackRepeatMode.Track);
 
-        var components = new ComponentBuilder()
-            .WithButton("Pause", "pause_button", ButtonStyle.Primary)
-            .WithButton("Skip", "skip_button", ButtonStyle.Secondary)
-            .WithButton("Repeat", "repeat_button", ButtonStyle.Primary)
-            .WithButton("Stop", "stop_button", ButtonStyle.Danger).Build();
-
-        await (await GetOriginalResponseAsync()).ModifyAsync(msg => msg.Components = components).ConfigureAwait(false);
+        await (await GetOriginalResponseAsync()).ModifyAsync(msg => msg.Components = components);
     }
 
     [ComponentInteraction("skip_button")]
     public async Task HandleSkipButton()
     {
-        var player = await GetPlayerAsync(connectToVoiceChannel: false).ConfigureAwait(false);
+        var player = await GetPlayerAsync(false);
         if (player is null) return;
-        await player.SkipAsync().ConfigureAwait(false);
+        await player.SkipAsync();
     }
 
     [ComponentInteraction("stop_button")]
     public async Task HandleStopButton()
     {
-        var player = await GetPlayerAsync(connectToVoiceChannel: false).ConfigureAwait(false);
+        var player = await GetPlayerAsync(false);
         if (player is null) return;
-        await player.StopAsync().ConfigureAwait(false);
-        await player.DisconnectAsync().ConfigureAwait(false);
-        var components = new ComponentBuilder().RemoveComponentsOfType;
+
+        await player.StopAsync();
+        await player.DisconnectAsync();
+
+        var msg = await GetOriginalResponseAsync();
+
+        if (msg != null)
+        {
+            await msg.ModifyAsync(m => m.Components = new ComponentBuilder().Build());
+        }
     }
 
     [ComponentInteraction("repeat_button")]
     public async Task HandleRepeatButton()
     {
-        await DeferAsync().ConfigureAwait(false);
-        var player = await GetPlayerAsync(connectToVoiceChannel: false).ConfigureAwait(false);
+        await DeferAsync();
+
+        var player = await GetPlayerAsync(false);
         if (player is null) return;
-        await player.ResumeAsync().ConfigureAwait(false);
-        player.RepeatMode = player.RepeatMode == TrackRepeatMode.Track ? TrackRepeatMode.None : TrackRepeatMode.Track;
-        new ComponentBuilder()
-            .WithButton("Pause", "pause_button", ButtonStyle.Primary)
-            .WithButton("Skip", "skip_button", ButtonStyle.Secondary)
-            .WithButton(player.RepeatMode == TrackRepeatMode.Track ? "Stop Repeating" : "Repeat", "repeat_button", ButtonStyle.Primary)
-            .WithButton("Stop", "stop_button", ButtonStyle.Danger).Build();
+
+        player.RepeatMode = player.RepeatMode == TrackRepeatMode.Track
+            ? TrackRepeatMode.None
+            : TrackRepeatMode.Track;
+
+        var components = MusicControlsBuilder.BuildControls(
+            isPaused: player.State == PlayerState.Paused,
+            isRepeating: player.RepeatMode == TrackRepeatMode.Track);
+
+        await (await GetOriginalResponseAsync()).ModifyAsync(msg => msg.Components = components);
     }
+
     #endregion
     #region Helpers
     private async ValueTask<VoteLavalinkPlayer?> GetPlayerAsync(bool connectToVoiceChannel = true)

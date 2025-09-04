@@ -130,11 +130,13 @@ public static class LavaLinkHelper
 
     public static async Task<LavalinkServerConfig> GetLavalinkServerConfiguration(IConfiguration configuration)
     {
-        List<LavalinkServer> servers = await LavaLinkHelper.GetLavalinkServers(configuration["LavaLinkSource"]!);
-        List<LavalinkServer> onlineServers = await LavaLinkHelper.GetOnlineLavalinkServers(servers, configuration["TestQuery"]!, configuration);
+        var servers = await LavaLinkHelper.GetLavalinkServers(configuration["LavaLinkSource"]!);
+        var onlineServers = await LavaLinkHelper.GetOnlineLavalinkServers(servers, configuration["TestQuery"]!, configuration);
         if (onlineServers.Count > 0)
         {
+            Console.WriteLine($"Found {onlineServers.Count} online servers.");
             var server = onlineServers[0];
+
             string scheme = server.Secure!.ToLower() == "true" ? "https" : "http";
             return new LavalinkServerConfig
             {
@@ -143,23 +145,6 @@ public static class LavaLinkHelper
             };
         }
         else
-        {
             throw new InvalidOperationException("No online servers found.");
-        }
     }
-}
-
-public class LavalinkServer
-{
-    public string? Host { get; set; }
-    public string? Port { get; set; }
-    public string? Password { get; set; }
-    public string? Secure { get; set; }
-    public string? Version { get; set; }
-}
-
-public class LavalinkServerConfig
-{
-    public string? BaseAddress { get; set; }
-    public string? Passphrase { get; set; }
 }

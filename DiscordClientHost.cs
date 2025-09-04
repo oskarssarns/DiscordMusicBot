@@ -34,16 +34,9 @@ internal sealed class DiscordClientHost : IHostedService
     {
         _discordSocketClient.InteractionCreated += InteractionCreated;
         _discordSocketClient.Ready += ClientReady;
-
         _logger.LogInformation("Starting Discord client...");
-        await _discordSocketClient
-            .LoginAsync(TokenType.Bot, _configuration["BotToken"])
-            .ConfigureAwait(false);
-
-        await _discordSocketClient
-            .StartAsync()
-            .ConfigureAwait(false);
-
+        await _discordSocketClient.LoginAsync(TokenType.Bot, _configuration["BotToken"]).ConfigureAwait(false);
+        await _discordSocketClient.StartAsync().ConfigureAwait(false);
         _logger.LogInformation("Waiting for Discord client to be ready...");
     }
 
@@ -51,10 +44,7 @@ internal sealed class DiscordClientHost : IHostedService
     {
         _discordSocketClient.InteractionCreated -= InteractionCreated;
         _discordSocketClient.Ready -= ClientReady;
-
-        await _discordSocketClient
-            .StopAsync()
-            .ConfigureAwait(false);
+        await _discordSocketClient.StopAsync().ConfigureAwait(false);
     }
 
     private Task InteractionCreated(SocketInteraction interaction)
@@ -65,21 +55,14 @@ internal sealed class DiscordClientHost : IHostedService
 
     private async Task ClientReady()
     {
-        await _interactionService
-            .AddModulesAsync(Assembly.GetExecutingAssembly(), _serviceProvider)
-            .ConfigureAwait(false);
+        await _interactionService.AddModulesAsync(Assembly.GetExecutingAssembly(), _serviceProvider).ConfigureAwait(false);
 
-        await _interactionService
-            .RegisterCommandsToGuildAsync(ulong.Parse(_configuration["Server2"]!))
-            .ConfigureAwait(false);
-        await _interactionService
-            .RegisterCommandsToGuildAsync(ulong.Parse(_configuration["Server1"]!))
-            .ConfigureAwait(false);
-        await _interactionService
-            .RegisterCommandsToGuildAsync(ulong.Parse(_configuration["Server3"]!))
-            .ConfigureAwait(false);
-        await _interactionService
-            .RegisterCommandsToGuildAsync(ulong.Parse(_configuration["Server4"]!))
-            .ConfigureAwait(false);
+        var servers = _configuration.GetSection("Servers").Get<string[]>();
+
+        foreach (var serverId in servers!)
+        {
+            if (ulong.TryParse(serverId, out var guildId))
+                await _interactionService.RegisterCommandsToGuildAsync(guildId).ConfigureAwait(false);
+        }
     }
 }

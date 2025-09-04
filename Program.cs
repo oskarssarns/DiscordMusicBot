@@ -3,7 +3,8 @@
 var builder = Host.CreateDefaultBuilder(args)
     .ConfigureAppConfiguration((context, config) =>
     {
-        config.SetBasePath(Directory.GetCurrentDirectory()).AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
+        config.SetBasePath(Directory.GetCurrentDirectory())
+        .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
     })
     .ConfigureServices(async (context, services) =>
     {
@@ -35,12 +36,17 @@ var builder = Host.CreateDefaultBuilder(args)
             new InteractionService(provider.GetRequiredService<DiscordSocketClient>()));
         services.AddSingleton<IDiscordClientWrapper>(provider =>
             new DiscordClientWrapper(provider.GetRequiredService<DiscordSocketClient>()));
+
+        services.AddSingleton<MusicMessageService>();
+
         services.AddLogging(x => x.AddConsole().SetMinimumLevel(LogLevel.Trace));
-        services.AddDbContext<GachiDbContext>(options => options.UseSqlServer(configuration.GetConnectionString("GachiBase")));
+        services.AddDbContext<MusicDbContext>(options =>
+            options.UseSqlServer(configuration.GetConnectionString("GachiBase")));
         services.AddLavalink();
         services.ConfigureLavalink(options =>
         {
-            var server = Task.Run(() => GetLavalinkServerConfiguration(configuration)).GetAwaiter().GetResult();
+            var server = Task.Run(() => LavaLinkHelper.GetLavalinkServerConfiguration(configuration))
+                             .GetAwaiter().GetResult();
             options.BaseAddress = new Uri(server.BaseAddress!);
             options.Passphrase = server.Passphrase;
         });
@@ -49,23 +55,3 @@ var builder = Host.CreateDefaultBuilder(args)
 
 var app = builder.Build();
 await app.RunAsync();
-
-async Task<LavaLinkLouieBot.Helpers.LavalinkServerConfig> GetLavalinkServerConfiguration(IConfiguration configuration)
-{
-    var servers = await LavaLinkHelper.GetLavalinkServers(configuration["LavaLinkSource"]!);
-    var onlineServers = await LavaLinkHelper.GetOnlineLavalinkServers(servers, configuration["TestQuery"]!, configuration);
-    if (onlineServers.Count > 0)
-    {
-        var server = onlineServers[0];
-        string scheme = server.Secure!.ToLower() == "true" ? "https" : "http";
-        return new LavaLinkLouieBot.Helpers.LavalinkServerConfig
-        {
-            BaseAddress = $"{scheme}://{server.Host}:{server.Port}",
-            Passphrase = server.Password
-        };
-    }
-    else
-    {
-        throw new InvalidOperationException("No online servers found.");
-    }
-}
