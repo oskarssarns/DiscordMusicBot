@@ -4,12 +4,18 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
     private readonly IAudioService _audioService;
     private readonly MusicDbContext _guildDbContext;
     private readonly MusicMessageService _messageService;
+    private readonly IConfiguration _configuration;
 
-    public MusicModule(IAudioService audioService, MusicDbContext guildDbContext, MusicMessageService messageService)
+    public MusicModule(
+        IAudioService audioService,
+        MusicDbContext guildDbContext,
+        MusicMessageService messageService,
+        IConfiguration configuration)
     {
         _audioService = audioService ?? throw new ArgumentNullException(nameof(audioService));
         _guildDbContext = guildDbContext ?? throw new ArgumentNullException(nameof(guildDbContext));
         _messageService = messageService ?? throw new ArgumentNullException(nameof(messageService));
+        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
     }
 
     #region Commands
@@ -55,42 +61,54 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
     [SlashCommand("pp", "Plays all songs from specific playlist", runMode: RunMode.Async)]
     public async Task PlayPlaylist(string playlist)
     {
+        await DeferAsync(ephemeral: true);
+
         var playlistSongs = await _guildDbContext.louie_bot_playlists
             .Where(s => s.Playlist == playlist)
             .ToListAsync();
 
         playlistSongs = playlistSongs.OrderBy(_ => Guid.NewGuid()).ToList();
 
-        await DeferAsync();
         var player = await GetPlayerAsync(connectToVoiceChannel: true);
-        if (player is null || !playlistSongs.Any()) return;
+        if (player is null) return;
+
+        if (!playlistSongs.Any())
+        {
+            await SendInteractionMessageAsync($"Playlist `{playlist}` has no songs.");
+            return;
+        }
 
         foreach (var track in playlistSongs)
         {
             await player.PlayAsync(track.Link!);
         }
 
-        var components = MusicControlsBuilder.BuildControls(isPaused: false, isRepeating: false);
-        await _messageService.SendOrUpdateAsync(Context, $"🔈 Playing ♂: {playlistSongs[0].Playlist} playlist", components);
+        await UpdatePlayerStatusMessageAsync(player, $"🔈 Playlist started: {playlistSongs[0].Playlist}");
+        await TryDeleteOriginalResponseAsync();
     }
 
     [SlashCommand("disconnect", "Disconnects from voice channel", runMode: RunMode.Async)]
     public async Task Disconnect()
     {
+        await DeferAsync(ephemeral: true);
+
         var player = await GetPlayerAsync();
         if (player is null) return;
 
         await player.DisconnectAsync();
         await _messageService.SendOrUpdateAsync(Context, "🔌 Disconnected.", new ComponentBuilder().Build());
         _messageService.Clear(Context.Guild.Id);
+        await TryDeleteOriginalResponseAsync();
     }
 
     [SlashCommand("speed", "Changes playback speed (0.5 - 3.0)", runMode: RunMode.Async)]
     public async Task ChangeSpeed(double speed)
     {
+        await DeferAsync(ephemeral: true);
+
         if (speed is < 0.5 or > 3.0)
         {
-            await RespondAsync("Speed must be between 0.5 and 3.0");
+            await SendInteractionMessageAsync("Speed must be between 0.5 and 3.0");
             return;
         }
 
@@ -99,13 +117,14 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
 
         player.Filters.SetFilter(new TimescaleFilterOptions { Speed = (float)speed });
         await player.Filters.CommitAsync();
-        await RespondAsync($"Playback speed set to {speed:0.0}x");
+        await UpdatePlayerStatusMessageAsync(player);
+        await TryDeleteOriginalResponseAsync();
     }
 
     [SlashCommand("play", "Plays music", runMode: RunMode.Async)]
     public async Task Play(string query)
     {
-        await DeferAsync();
+        await DeferAsync(ephemeral: true);
 
         var player = await GetPlayerAsync(connectToVoiceChannel: true);
         if (player is null) return;
@@ -118,54 +137,66 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
 
             if (track is null) return;
 
-            var position = await player.PlayAsync(track);
-            var message = position == 0 ? $"🔈 Playing: {track.Title}" : $"🔈 Added to queue: {track.Title}";
-
-            var components = MusicControlsBuilder.BuildControls(isPaused: false, isRepeating: false);
-            await _messageService.SendOrUpdateAsync(Context, message, components);
+            await player.PlayAsync(track);
+            await UpdatePlayerStatusMessageAsync(player);
+            await TryDeleteOriginalResponseAsync();
         }
         catch (Exception ex)
         {
-            await FollowupAsync($"Error loading track: {ex.Message}");
+            await SendInteractionMessageAsync($"Error loading track: {ex.Message}");
         }
     }
 
-    [SlashCommand("radio", "Plays gachi radio", runMode: RunMode.Async)]
+    [SlashCommand("radio", "Plays MusicBot radio", runMode: RunMode.Async)]
     public async Task Radio()
     {
-        const string gachiRadio = "https://www.youtube.com/watch?v=akHAQD3o1NA";
-        await DeferAsync();
+        const string musicBotRadio = "https://www.youtube.com/watch?v=akHAQD3o1NA";
+        await DeferAsync(ephemeral: true);
 
         var player = await GetPlayerAsync(connectToVoiceChannel: true);
         if (player is null) return;
 
-        var track = await _audioService.Tracks.LoadTrackAsync(gachiRadio, TrackSearchMode.YouTube);
-        if (track is null) return;
+        var track = await _audioService.Tracks.LoadTrackAsync(musicBotRadio, TrackSearchMode.YouTube);
+        if (track is null)
+        {
+            await SendInteractionMessageAsync("Failed to load radio track.");
+            return;
+        }
 
         await player.PlayAsync(track);
-        var components = MusicControlsBuilder.BuildControls(isPaused: false, isRepeating: false);
-        await _messageService.SendOrUpdateAsync(Context, $"🔈 Playing: {track.Title}", components);
+        await UpdatePlayerStatusMessageAsync(player);
+        await TryDeleteOriginalResponseAsync();
     }
 
     [SlashCommand("stop", "Stops the current track", runMode: RunMode.Async)]
     public async Task Stop()
     {
+        await DeferAsync(ephemeral: true);
+
         var player = await GetPlayerAsync(false);
-        if (player is null || player.CurrentItem is null) return;
+        if (player is null) return;
+        if (player.CurrentItem is null)
+        {
+            await SendInteractionMessageAsync("Nothing is currently playing.");
+            return;
+        }
 
         await player.StopAsync();
         await player.DisconnectAsync();
 
         await _messageService.SendOrUpdateAsync(Context, "⏹ Stopped playback", new ComponentBuilder().Build());
         _messageService.Clear(Context.Guild.Id);
+        await TryDeleteOriginalResponseAsync();
     }
 
     [SlashCommand("volume", "Sets player volume (0 - 1000%)", runMode: RunMode.Async)]
     public async Task Volume(int volume = 100)
     {
+        await DeferAsync(ephemeral: true);
+
         if (volume is < 0 or > 1000)
         {
-            await RespondAsync("Volume out of range: 0% - 1000%!");
+            await SendInteractionMessageAsync("Volume out of range: 0% - 1000%!");
             return;
         }
 
@@ -173,7 +204,8 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
         if (player is null) return;
 
         await player.SetVolumeAsync(volume / 100f);
-        await RespondAsync($"Volume updated: {volume}%");
+        await UpdatePlayerStatusMessageAsync(player);
+        await TryDeleteOriginalResponseAsync();
     }
     #endregion
     #region Buttons
@@ -186,9 +218,7 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
         if (player is null) return;
 
         await player.PauseAsync();
-        var components = MusicControlsBuilder.BuildControls(isPaused: true, isRepeating: player.RepeatMode == TrackRepeatMode.Track);
-
-        await (await GetOriginalResponseAsync()).ModifyAsync(msg => msg.Components = components);
+        await UpdatePlayerStatusMessageAsync(player);
     }
 
     [ComponentInteraction("resume_button")]
@@ -200,34 +230,43 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
         if (player is null) return;
 
         await player.ResumeAsync();
-        var components = MusicControlsBuilder.BuildControls(isPaused: false, isRepeating: player.RepeatMode == TrackRepeatMode.Track);
-
-        await (await GetOriginalResponseAsync()).ModifyAsync(msg => msg.Components = components);
+        await UpdatePlayerStatusMessageAsync(player);
     }
 
     [ComponentInteraction("skip_button")]
     public async Task HandleSkipButton()
     {
+        await DeferAsync();
+
         var player = await GetPlayerAsync(false);
         if (player is null) return;
         await player.SkipAsync();
+        await UpdatePlayerStatusMessageAsync(player);
+    }
+
+    [ComponentInteraction("next_button")]
+    public async Task HandleNextButton()
+    {
+        await DeferAsync();
+
+        var player = await GetPlayerAsync(false);
+        if (player is null) return;
+        await player.SkipAsync();
+        await UpdatePlayerStatusMessageAsync(player);
     }
 
     [ComponentInteraction("stop_button")]
     public async Task HandleStopButton()
     {
+        await DeferAsync();
+
         var player = await GetPlayerAsync(false);
         if (player is null) return;
 
         await player.StopAsync();
         await player.DisconnectAsync();
-
-        var msg = await GetOriginalResponseAsync();
-
-        if (msg != null)
-        {
-            await msg.ModifyAsync(m => m.Components = new ComponentBuilder().Build());
-        }
+        await _messageService.SendOrUpdateAsync(Context, "⏹ Stopped playback", new ComponentBuilder().Build());
+        _messageService.Clear(Context.Guild.Id);
     }
 
     [ComponentInteraction("repeat_button")]
@@ -242,12 +281,20 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
             ? TrackRepeatMode.None
             : TrackRepeatMode.Track;
 
-        var components = MusicControlsBuilder.BuildControls(
-            isPaused: player.State == PlayerState.Paused,
-            isRepeating: player.RepeatMode == TrackRepeatMode.Track);
-
-        await (await GetOriginalResponseAsync()).ModifyAsync(msg => msg.Components = components);
+        await UpdatePlayerStatusMessageAsync(player);
     }
+
+    [ComponentInteraction("remove_queue_1")]
+    public Task HandleRemoveQueue1Button() => HandleRemoveQueueButtonAsync(0);
+
+    [ComponentInteraction("remove_queue_2")]
+    public Task HandleRemoveQueue2Button() => HandleRemoveQueueButtonAsync(1);
+
+    [ComponentInteraction("remove_queue_3")]
+    public Task HandleRemoveQueue3Button() => HandleRemoveQueueButtonAsync(2);
+
+    [ComponentInteraction("remove_queue_4")]
+    public Task HandleRemoveQueue4Button() => HandleRemoveQueueButtonAsync(3);
 
     #endregion
     #region Helpers
@@ -269,11 +316,94 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
                 _ => "Unknown error.",
             };
 
-            await FollowupAsync(errorMessage).ConfigureAwait(false);
+            await SendInteractionMessageAsync(errorMessage).ConfigureAwait(false);
             return null;
         }
 
         return result.Player;
+    }
+
+    private Task SendInteractionMessageAsync(string message)
+    {
+        if (Context.Interaction.HasResponded)
+        {
+            return FollowupAsync(message, ephemeral: true);
+        }
+
+        return RespondAsync(message, ephemeral: true);
+    }
+
+    private async Task TryDeleteOriginalResponseAsync()
+    {
+        if (!Context.Interaction.HasResponded)
+        {
+            return;
+        }
+
+        try
+        {
+            await DeleteOriginalResponseAsync();
+        }
+        catch
+        {
+            // Ignore deletion errors; they should not break command flow.
+        }
+    }
+
+    private async Task UpdatePlayerStatusMessageAsync(VoteLavalinkPlayer player, string? header = null)
+    {
+        bool showQueueRemoveButtons = IsAdminConfigured();
+        int upcomingCount = Math.Min(4, player.Queue.Count);
+        string content = MusicStatusBuilder.BuildStatusContent(
+            player,
+            header,
+            showQueueRemoveHints: showQueueRemoveButtons);
+
+        var components = MusicControlsBuilder.BuildControls(
+            isPaused: player.State == PlayerState.Paused,
+            isRepeating: player.RepeatMode == TrackRepeatMode.Track,
+            upcomingCount: upcomingCount,
+            showQueueRemoveButtons: showQueueRemoveButtons);
+
+        await _messageService.SendOrUpdateAsync(Context, content, components);
+    }
+
+    private async Task HandleRemoveQueueButtonAsync(int queueIndex)
+    {
+        await DeferAsync(ephemeral: true);
+
+        if (!IsAdminUser(Context.User.Id))
+        {
+            await SendInteractionMessageAsync("Only the configured admin can remove tracks from the queue.");
+            return;
+        }
+
+        var player = await GetPlayerAsync(false);
+        if (player is null) return;
+
+        if (queueIndex < 0 || queueIndex >= player.Queue.Count)
+        {
+            await SendInteractionMessageAsync("That queue slot is empty.");
+            return;
+        }
+
+        string removedTitle = player.Queue[queueIndex].Track?.Title ?? player.Queue[queueIndex].Identifier;
+        await player.Queue.RemoveAtAsync(queueIndex, CancellationToken.None);
+        await UpdatePlayerStatusMessageAsync(player);
+        await SendInteractionMessageAsync($"Removed from queue: {removedTitle}");
+    }
+
+    private bool IsAdminConfigured() => GetAdminUserId() != 0;
+
+    private bool IsAdminUser(ulong userId)
+    {
+        ulong adminUserId = GetAdminUserId();
+        return adminUserId != 0 && userId == adminUserId;
+    }
+
+    private ulong GetAdminUserId()
+    {
+        return _configuration.GetValue<ulong>("AdminUserId");
     }
     #endregion
 }

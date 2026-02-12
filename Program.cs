@@ -6,7 +6,7 @@ var builder = Host.CreateDefaultBuilder(args)
         config.SetBasePath(Directory.GetCurrentDirectory())
         .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
     })
-    .ConfigureServices(async (context, services) =>
+    .ConfigureServices((context, services) =>
     {
         IConfiguration configuration = context.Configuration;
 
@@ -41,12 +41,18 @@ var builder = Host.CreateDefaultBuilder(args)
 
         services.AddLogging(x => x.AddConsole().SetMinimumLevel(LogLevel.Trace));
         services.AddDbContext<MusicDbContext>(options =>
-            options.UseSqlServer(configuration.GetConnectionString("GachiBase")));
+            options.UseSqlServer(
+                configuration.GetConnectionString("DefaultConnection")
+                ?? throw new InvalidOperationException(
+                    "Missing connection string. Configure 'ConnectionStrings:DefaultConnection'.")));
         services.AddLavalink();
         services.ConfigureLavalink(options =>
         {
-            var server = Task.Run(() => LavaLinkHelper.GetLavalinkServerConfiguration(configuration))
-                             .GetAwaiter().GetResult();
+            var server = LavaLinkHelper.GetLavalinkServerConfiguration(configuration)
+                                       .GetAwaiter()
+                                       .GetResult();
+
+            Console.WriteLine($"Selected Lavalink server: {server.BaseAddress}");
             options.BaseAddress = new Uri(server.BaseAddress!);
             options.Passphrase = server.Passphrase;
         });

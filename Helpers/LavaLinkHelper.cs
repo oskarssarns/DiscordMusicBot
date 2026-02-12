@@ -12,53 +12,53 @@ public static class LavaLinkHelper
         response.EnsureSuccessStatusCode();
 
         string responseBody = await response.Content.ReadAsStringAsync();
-        JObject jsonResponse = JObject.Parse(responseBody);
+        JToken jsonResponse = JToken.Parse(responseBody);
+        JArray serversJson =
+            jsonResponse as JArray ??
+            jsonResponse["servers"] as JArray ??
+            jsonResponse["data"] as JArray ??
+            new JArray();
 
-        List<LavalinkServer> servers = new List<LavalinkServer>();
-        bool skipFirst = true;
-
-        foreach (var doc in jsonResponse["docs"]!)
+        if (serversJson.Count == 0)
         {
-            string text = doc["text"]!.ToString();
-            if (text.Contains("Host :"))
-            {
-                if (skipFirst)
-                {
-                    skipFirst = false;
-                    continue;
-                }
-
-                LavalinkServer server = new LavalinkServer();
-
-                int hostStart = text.IndexOf("Host :") + 7;
-                int hostEnd = text.IndexOf('\n', hostStart);
-                server.Host = text.Substring(hostStart, hostEnd - hostStart).Trim();
-
-                int portStart = text.IndexOf("Port :") + 7;
-                int portEnd = text.IndexOf('\n', portStart);
-                server.Port = text.Substring(portStart, portEnd - portStart).Trim();
-
-                int passwordStart = text.IndexOf("Password :") + 11;
-                int passwordEnd = text.IndexOf('\n', passwordStart);
-                server.Password = text.Substring(passwordStart, passwordEnd - passwordStart).Trim();
-                server.Password = RemoveQuotes(server.Password);
-
-                int secureStart = text.IndexOf("Secure :") + 9;
-                int secureEnd = text.IndexOf('\n', secureStart);
-                server.Secure = text.Substring(secureStart, secureEnd - secureStart).Trim();
-
-                Match versionMatch = Regex.Match(text, @"Version\s*(\d+\.\d+\.\d+)");
-                if (versionMatch.Success)
-                {
-                    server.Version = versionMatch.Groups[1].Value;
-                    if (Version.Parse(server.Version) >= Version.Parse("4.0.0"))
-                    {
-                        servers.Add(server);
-                    }
-                }
-            }
+            Console.WriteLine($"Lavalink source returned no server entries. Source: {source}");
         }
 
+        var servers = new List<LavalinkServer>();
+
+        foreach (var serverJson in serversJson.OfType<JObject>())
+        {
+            string host = serverJson["host"]?.ToString() ?? string.Empty;
+            string port = serverJson["port"]?.ToString() ?? string.Empty;
+            string password = serverJson["password"]?.ToString() ?? string.Empty;
+            string secure = (serverJson["secure"]?.Value<bool>() ?? false).ToString().ToLowerInvariant();
+            string version = serverJson["version"]?.ToString() ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(host) ||
+                string.IsNullOrWhiteSpace(port) ||
+                string.IsNullOrWhiteSpace(password))
+            {
+                continue;
+            }
+
+            if (!IsVersion4OrHigher(version))
+            {
+                continue;
+            }
+
+            servers.Add(new LavalinkServer
+            {
+                Host = host,
+                Port = port,
+                Password = password,
+                Secure = secure,
+                Version = version
+            });
+
+            Console.WriteLine($"Added Lavalink server: {host}:{port} (secure={secure}, version={version})");
+        }
+
+        Console.WriteLine($"Total Lavalink servers added: {servers.Count}");
         return servers;
     }
 
@@ -67,7 +67,15 @@ public static class LavaLinkHelper
         try
         {
             using TcpClient tcpClient = new TcpClient();
-            await tcpClient.ConnectAsync(server.Host!, int.Parse(server.Port!));
+            var connectTask = tcpClient.ConnectAsync(server.Host!, int.Parse(server.Port!));
+            var timeoutTask = Task.Delay(TimeSpan.FromSeconds(2));
+            var completedTask = await Task.WhenAny(connectTask, timeoutTask);
+
+            if (completedTask != connectTask)
+            {
+                return false;
+            }
+
             return tcpClient.Connected;
         }
         catch
@@ -76,30 +84,21 @@ public static class LavaLinkHelper
         }
     }
 
-    public static async Task<bool> CanServerPlayMusic(LavalinkServer server, string testQuery, IConfiguration configuration)
+    public static async Task<bool> CanServerPlayMusic(LavalinkServer server)
     {
         try
         {
-            var services = new ServiceCollection();
-            services.AddSingleton<IConfiguration>(configuration);
-            services.AddSingleton<DiscordSocketClient>();
-            services.AddSingleton<IDiscordClientWrapper, DiscordClientWrapper>();
-            services.AddLavalink();
-
             string scheme = server.Secure!.ToLower() == "true" ? "https" : "http";
-            string baseAddress = $"{scheme}://{server.Host}:{server.Port}";
+            string infoUrl = $"{scheme}://{server.Host}:{server.Port}/v4/info";
 
-            services.ConfigureLavalink(options =>
+            using var httpClient = new HttpClient
             {
-                options.BaseAddress = new Uri(baseAddress);
-                options.Passphrase = server.Password;
-            });
+                Timeout = TimeSpan.FromSeconds(3)
+            };
+            httpClient.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", server.Password);
 
-            var serviceProvider = services.BuildServiceProvider();
-            var audioService = serviceProvider.GetRequiredService<IAudioService>();
-
-            var track = await audioService.Tracks.LoadTrackAsync(testQuery, TrackSearchMode.YouTube).ConfigureAwait(false);
-            return track != null;
+            using var response = await httpClient.GetAsync(infoUrl).ConfigureAwait(false);
+            return response.IsSuccessStatusCode;
         }
         catch
         {
@@ -107,13 +106,27 @@ public static class LavaLinkHelper
         }
     }
 
-    public static async Task<List<LavalinkServer>> GetOnlineLavalinkServers(List<LavalinkServer> servers, string testQuery, IConfiguration configuration)
+    public static async Task<List<LavalinkServer>> GetOnlineLavalinkServers(List<LavalinkServer> servers)
     {
         List<LavalinkServer> onlineServers = new List<LavalinkServer>();
 
         foreach (var server in servers)
         {
-            if (await IsServerOnline(server) && await CanServerPlayMusic(server, testQuery, configuration))
+            bool isOnline = await IsServerOnline(server);
+            if (!isOnline)
+            {
+                Console.WriteLine($"Offline server: {server.Host}:{server.Port}");
+                continue;
+            }
+
+            bool canAuthenticate = await CanServerPlayMusic(server);
+            if (!canAuthenticate)
+            {
+                Console.WriteLine($"Unusable server (auth or API check failed): {server.Host}:{server.Port}");
+                continue;
+            }
+
+            if (isOnline && canAuthenticate)
             {
                 onlineServers.Add(server);
             }
@@ -128,14 +141,32 @@ public static class LavaLinkHelper
         return input.Trim('"');
     }
 
+    private static bool IsVersion4OrHigher(string version)
+    {
+        if (string.IsNullOrWhiteSpace(version))
+        {
+            return false;
+        }
+
+        string normalized = version.Trim().TrimStart('v', 'V');
+        string majorPart = normalized.Split('.', StringSplitOptions.RemoveEmptyEntries)[0];
+
+        return int.TryParse(majorPart, out int majorVersion) && majorVersion >= 4;
+    }
+
     public static async Task<LavalinkServerConfig> GetLavalinkServerConfiguration(IConfiguration configuration)
     {
         var servers = await LavaLinkHelper.GetLavalinkServers(configuration["LavaLinkSource"]!);
-        var onlineServers = await LavaLinkHelper.GetOnlineLavalinkServers(servers, configuration["TestQuery"]!, configuration);
+        var onlineServers = await LavaLinkHelper.GetOnlineLavalinkServers(servers);
         if (onlineServers.Count > 0)
         {
+            int maxPingMs = configuration.GetValue("MaxLavalinkPingMs", 200);
             Console.WriteLine($"Found {onlineServers.Count} online servers.");
-            var server = onlineServers[0];
+            LavalinkServer? server = await GetBestServerByPingThreshold(onlineServers, maxPingMs);
+            if (server is null)
+            {
+                throw new InvalidOperationException("No pingable online servers found.");
+            }
 
             string scheme = server.Secure!.ToLower() == "true" ? "https" : "http";
             return new LavalinkServerConfig
@@ -146,5 +177,65 @@ public static class LavaLinkHelper
         }
         else
             throw new InvalidOperationException("No online servers found.");
+    }
+
+    private static async Task<LavalinkServer?> GetBestServerByPingThreshold(List<LavalinkServer> servers, int maxPingMs)
+    {
+        LavalinkServer? fallbackServer = null;
+        long fallbackPing = long.MaxValue;
+
+        foreach (var server in servers)
+        {
+            long? ping = await MeasureTcpPingAsync(server);
+            if (ping is null)
+            {
+                continue;
+            }
+
+            Console.WriteLine($"Server ping: {server.Host}:{server.Port} => {ping}ms");
+
+            if (ping.Value <= maxPingMs)
+            {
+                Console.WriteLine($"Selected server within ping threshold ({maxPingMs}ms): {server.Host}:{server.Port} ({ping}ms)");
+                return server;
+            }
+
+            if (ping.Value < fallbackPing)
+            {
+                fallbackPing = ping.Value;
+                fallbackServer = server;
+            }
+        }
+
+        if (fallbackServer is not null)
+        {
+            Console.WriteLine($"No server met ping threshold ({maxPingMs}ms). Falling back to lowest ping: {fallbackServer.Host}:{fallbackServer.Port} ({fallbackPing}ms)");
+        }
+
+        return fallbackServer;
+    }
+
+    private static async Task<long?> MeasureTcpPingAsync(LavalinkServer server)
+    {
+        try
+        {
+            using var tcpClient = new TcpClient();
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            var connectTask = tcpClient.ConnectAsync(server.Host!, int.Parse(server.Port!));
+            var timeoutTask = Task.Delay(TimeSpan.FromSeconds(3));
+            var completedTask = await Task.WhenAny(connectTask, timeoutTask);
+
+            if (completedTask != connectTask || !tcpClient.Connected)
+            {
+                return null;
+            }
+
+            stopwatch.Stop();
+            return stopwatch.ElapsedMilliseconds;
+        }
+        catch
+        {
+            return null;
+        }
     }
 }
