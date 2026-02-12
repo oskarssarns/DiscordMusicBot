@@ -8,6 +8,27 @@ public static class MusicStatusBuilder
         bool showQueueRemoveHints = false)
     {
         string currentTrackTitle = player.CurrentTrack?.Title ?? "Nothing is currently playing.";
+        float speed = player.Filters?.Timescale?.Speed ?? 1f;
+        var upcomingTrackTitles = player.Queue
+            .Take(4)
+            .Select(GetQueueItemTitle)
+            .ToList();
+
+        return BuildStatusContent(
+            currentTrackTitle,
+            speed,
+            upcomingTrackTitles,
+            header,
+            showQueueRemoveHints);
+    }
+
+    public static string BuildStatusContent(
+        string currentTrackTitle,
+        float speed,
+        IReadOnlyList<string> upcomingTrackTitles,
+        string? header = null,
+        bool showQueueRemoveHints = false)
+    {
         var lines = new List<string>();
 
         if (!string.IsNullOrWhiteSpace(header))
@@ -17,24 +38,23 @@ public static class MusicStatusBuilder
 
         lines.Add($"🎵 Now playing: {currentTrackTitle}");
 
-        float speed = player.Filters?.Timescale?.Speed ?? 1f;
         if (MathF.Abs(speed - 1f) > 0.01f)
         {
             lines.Add($"⏩ Speed: {speed:0.##}x");
         }
 
-        var upcomingTracks = player.Queue.Take(4).ToList();
-        if (upcomingTracks.Count == 0)
+        if (upcomingTrackTitles.Count == 0)
         {
             lines.Add("⏭ Up next: queue is empty.");
         }
         else
         {
             lines.Add("⏭ Up next:");
-            for (int i = 0; i < upcomingTracks.Count; i++)
+            int take = Math.Min(4, upcomingTrackTitles.Count);
+            for (int i = 0; i < take; i++)
             {
                 string removeHint = showQueueRemoveHints ? $" [Remove {i + 1}]" : string.Empty;
-                lines.Add($"{i + 1}. {GetQueueItemTitle(upcomingTracks[i])}{removeHint}");
+                lines.Add($"{i + 1}. {upcomingTrackTitles[i]}{removeHint}");
             }
         }
 

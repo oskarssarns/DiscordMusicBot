@@ -25,4 +25,10 @@
     </None>
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="tests/**/*.cs" />
+    <EmbeddedResource Remove="tests/**/*.resx" />
+    <None Remove="tests/**" />
+  </ItemGroup>
+
 </Project>
