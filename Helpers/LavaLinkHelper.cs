@@ -2,6 +2,9 @@
 
 public static class LavaLinkHelper
 {
+    private static readonly ILoggerFactory LoggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(builder => builder.AddConsole());
+    private static readonly ILogger Logger = LoggerFactory.CreateLogger(nameof(LavaLinkHelper));
+
     public static async Task<List<LavalinkServer>> GetLavalinkServers(string source)
     {
         using HttpClient client = new HttpClient();
@@ -78,8 +81,9 @@ public static class LavaLinkHelper
 
             return tcpClient.Connected;
         }
-        catch
+        catch (Exception ex)
         {
+            Logger.LogDebug(ex, "TCP online check failed for server {Host}:{Port}.", server.Host, server.Port);
             return false;
         }
     }
@@ -100,8 +104,9 @@ public static class LavaLinkHelper
             using var response = await httpClient.GetAsync(infoUrl).ConfigureAwait(false);
             return response.IsSuccessStatusCode;
         }
-        catch
+        catch (Exception ex)
         {
+            Logger.LogDebug(ex, "Lavalink API check failed for server {Host}:{Port}.", server.Host, server.Port);
             return false;
         }
     }
@@ -233,8 +238,9 @@ public static class LavaLinkHelper
             stopwatch.Stop();
             return stopwatch.ElapsedMilliseconds;
         }
-        catch
+        catch (Exception ex)
         {
+            Logger.LogDebug(ex, "Ping measurement failed for server {Host}:{Port}.", server.Host, server.Port);
             return null;
         }
     }

@@ -38,6 +38,9 @@ var builder = Host.CreateDefaultBuilder(args)
             new DiscordClientWrapper(provider.GetRequiredService<DiscordSocketClient>()));
 
         services.AddSingleton<MusicMessageService>();
+        services.AddSingleton<MusicInteractionService>();
+        services.AddSingleton<PlaybackService>();
+        services.AddScoped<PlaylistService>();
 
         services.AddLogging(x => x.AddConsole().SetMinimumLevel(LogLevel.Trace));
         services.AddDbContext<MusicDbContext>(options =>
