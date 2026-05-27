@@ -2,7 +2,7 @@
 public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext>
 {
     private readonly IAudioService _audioService;
-    private readonly PlaylistService _playlistService;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly PlaybackService _playbackService;
     private readonly MusicMessageService _messageService;
     private readonly MusicInteractionService _interactionService;
@@ -10,14 +10,14 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
 
     public MusicModule(
         IAudioService audioService,
-        PlaylistService playlistService,
+        IServiceScopeFactory scopeFactory,
         PlaybackService playbackService,
         MusicMessageService messageService,
         MusicInteractionService interactionService,
         ILogger<MusicModule> logger)
     {
         _audioService = audioService ?? throw new ArgumentNullException(nameof(audioService));
-        _playlistService = playlistService ?? throw new ArgumentNullException(nameof(playlistService));
+        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _playbackService = playbackService ?? throw new ArgumentNullException(nameof(playbackService));
         _messageService = messageService ?? throw new ArgumentNullException(nameof(messageService));
         _interactionService = interactionService ?? throw new ArgumentNullException(nameof(interactionService));
@@ -30,10 +30,18 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
     {
         try
         {
+            using var scope = _scopeFactory.CreateScope();
+            var playlistService = scope.ServiceProvider.GetService<PlaylistService>();
+            if (playlistService is null)
+            {
+                await SendPlaylistDatabaseNotConfiguredAsync();
+                return;
+            }
+
             LavalinkTrack? track = await _audioService.Tracks.LoadTrackAsync(query, TrackSearchMode.YouTube);
             if (track != null)
             {
-                bool isAdded = await _playlistService.AddTrackIfMissingAsync(
+                bool isAdded = await playlistService.AddTrackIfMissingAsync(
                     playlist,
                     query,
                     track.Title,
@@ -65,7 +73,15 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
     {
         await DeferAsync(ephemeral: true);
 
-        var playlistSongs = await _playlistService.GetShuffledPlaylistSongsAsync(playlist);
+        using var scope = _scopeFactory.CreateScope();
+        var playlistService = scope.ServiceProvider.GetService<PlaylistService>();
+        if (playlistService is null)
+        {
+            await SendPlaylistDatabaseNotConfiguredAsync();
+            return;
+        }
+
+        var playlistSongs = await playlistService.GetShuffledPlaylistSongsAsync(playlist);
 
         var player = await _interactionService.GetPlayerAsync(Context, connectToVoiceChannel: true);
         if (player is null) return;
@@ -228,12 +244,6 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
     {
         await DeferAsync(ephemeral: true);
 
-        if (!_interactionService.IsAdminUser(Context.User.Id))
-        {
-            await _interactionService.SendInteractionMessageAsync(Context, "Only the configured admin can remove tracks from the queue.");
-            return;
-        }
-
         var player = await _interactionService.GetPlayerAsync(Context, false);
         if (player is null) return;
 
@@ -247,6 +257,13 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
         await player.Queue.RemoveAtAsync(queueIndex, CancellationToken.None);
         await _interactionService.UpdatePlayerStatusMessageAsync(Context, player);
         await _interactionService.SendInteractionMessageAsync(Context, $"Removed from queue: {removedTitle}");
+    }
+
+    private Task SendPlaylistDatabaseNotConfiguredAsync()
+    {
+        return _interactionService.SendInteractionMessageAsync(
+            Context,
+            "Playlist commands are unavailable because the database is not configured.");
     }
     #endregion
 }

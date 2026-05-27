@@ -1,0 +1,38 @@
+services:
+  bot:
+    build:
+      context: .
+    image: lavalink-louie-bot:local
+    restart: unless-stopped
+    environment:
+      BotToken: ${BOT_TOKEN:?Set BOT_TOKEN in .env}
+      LavaLinkSource: ${LAVALINK_SOURCE:-https://lavalink-list.ajieblogs.eu.org/All}
+      MaxLavalinkPingMs: ${MAX_LAVALINK_PING_MS:-200}
+      TestQuery: ${TEST_QUERY:-https://www.youtube.com/watch?v=dQw4w9WgXcQ}
+      PlaybackSelfTestQuery: ${PLAYBACK_SELF_TEST_QUERY:-}
+      PlaybackSelfTestVoiceChannelId: ${PLAYBACK_SELF_TEST_VOICE_CHANNEL_ID:-}
+      # ConnectionStrings__DefaultConnection: Server=sqlserver,1433;Database=${SQLSERVER_DATABASE:-MusicBotDb};User Id=sa;Password=${SQLSERVER_SA_PASSWORD:?Set SQLSERVER_SA_PASSWORD in .env};Encrypt=False;TrustServerCertificate=True
+    # depends_on:
+    #   sqlserver:
+    #     condition: service_healthy
+
+#   sqlserver:
+#     image: mcr.microsoft.com/mssql/server:2022-latest
+#     restart: unless-stopped
+#     environment:
+#       ACCEPT_EULA: "Y"
+#       MSSQL_PID: Developer
+#       MSSQL_SA_PASSWORD: ${SQLSERVER_SA_PASSWORD:?Set SQLSERVER_SA_PASSWORD in .env}
+#     ports:
+#       - "${SQLSERVER_PORT:-1433}:1433"
+#     volumes:
+#       - sqlserver-data:/var/opt/mssql
+#     healthcheck:
+#       test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -C -Q \"SELECT 1\" || /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -Q \"SELECT 1\""]
+#       interval: 10s
+#       timeout: 5s
+#       retries: 20
+#       start_period: 30s
+
+# volumes:
+#   sqlserver-data:

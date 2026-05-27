@@ -5,8 +5,7 @@ public static class MusicControlsBuilder
     public static MessageComponent BuildControls(
         bool isPaused,
         bool isRepeating,
-        int upcomingCount = 0,
-        bool showQueueRemoveButtons = false)
+        int upcomingCount = 0)
     {
         var builder = new ComponentBuilder()
             .WithButton(isPaused ? "Resume" : "Pause",
@@ -18,17 +17,14 @@ public static class MusicControlsBuilder
                         ButtonStyle.Primary)
             .WithButton("Stop", "stop_button", ButtonStyle.Danger);
 
-        if (showQueueRemoveButtons)
+        int removeButtonCount = Math.Min(4, upcomingCount);
+        for (int i = 0; i < removeButtonCount; i++)
         {
-            for (int i = 0; i < 4; i++)
-            {
-                builder.WithButton(
-                    $"Remove {i + 1}",
-                    $"remove_queue_{i + 1}",
-                    ButtonStyle.Secondary,
-                    row: 1,
-                    disabled: i >= upcomingCount);
-            }
+            builder.WithButton(
+                $"Remove {i + 1}",
+                $"remove_queue_{i + 1}",
+                ButtonStyle.Secondary,
+                row: 1);
         }
 
         return builder.Build();

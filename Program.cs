@@ -4,7 +4,9 @@ var builder = Host.CreateDefaultBuilder(args)
     .ConfigureAppConfiguration((context, config) =>
     {
         config.SetBasePath(Directory.GetCurrentDirectory())
-        .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
+            .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
+            .AddEnvironmentVariables()
+            .AddCommandLine(args);
     })
     .ConfigureServices((context, services) =>
     {
@@ -13,8 +15,11 @@ var builder = Host.CreateDefaultBuilder(args)
         services.AddSingleton<IConfiguration>(configuration);
         services.AddSingleton<DiscordSocketClient>(provider =>
         {
-            var client = new DiscordSocketClient();
-            client.Log += async (msg) =>
+            var client = new DiscordSocketClient(new DiscordSocketConfig
+            {
+                GatewayIntents = GatewayIntents.Guilds | GatewayIntents.GuildVoiceStates
+            });
+            client.Log += (msg) =>
             {
                 provider.GetRequiredService<ILogger<DiscordSocketClient>>().Log(
                     msg.Severity switch
@@ -29,6 +34,8 @@ var builder = Host.CreateDefaultBuilder(args)
                     },
                     msg.Exception,
                     msg.Message);
+
+                return Task.CompletedTask;
             };
             return client;
         });
@@ -40,14 +47,17 @@ var builder = Host.CreateDefaultBuilder(args)
         services.AddSingleton<MusicMessageService>();
         services.AddSingleton<MusicInteractionService>();
         services.AddSingleton<PlaybackService>();
-        services.AddScoped<PlaylistService>();
 
-        services.AddLogging(x => x.AddConsole().SetMinimumLevel(LogLevel.Trace));
-        services.AddDbContext<MusicDbContext>(options =>
-            options.UseSqlServer(
-                configuration.GetConnectionString("DefaultConnection")
-                ?? throw new InvalidOperationException(
-                    "Missing connection string. Configure 'ConnectionStrings:DefaultConnection'.")));
+        services.AddLogging(x => x.AddConsole().SetMinimumLevel(LogLevel.Information));
+
+        string? connectionString = configuration.GetConnectionString("DefaultConnection");
+        if (!string.IsNullOrWhiteSpace(connectionString))
+        {
+            services.AddDbContext<MusicDbContext>(options =>
+                options.UseSqlServer(connectionString));
+            services.AddScoped<PlaylistService>();
+        }
+
         services.AddLavalink();
         services.ConfigureLavalink(options =>
         {
@@ -60,7 +70,25 @@ var builder = Host.CreateDefaultBuilder(args)
             options.Passphrase = server.Passphrase;
         });
         services.AddHostedService<DiscordClientHost>();
+        services.AddHostedService<PlaybackSelfTestService>();
     }).UseConsoleLifetime();
 
 var app = builder.Build();
+await InitializeDatabaseAsync(app.Services);
 await app.RunAsync();
+
+static async Task InitializeDatabaseAsync(IServiceProvider services)
+{
+    using var scope = services.CreateScope();
+    var logger = scope.ServiceProvider
+        .GetRequiredService<ILoggerFactory>()
+        .CreateLogger("Database");
+    var dbContext = scope.ServiceProvider.GetService<MusicDbContext>();
+    if (dbContext is null)
+    {
+        logger.LogWarning("No database connection string configured. Playlist commands are disabled.");
+        return;
+    }
+
+    await dbContext.Database.EnsureCreatedAsync();
+}

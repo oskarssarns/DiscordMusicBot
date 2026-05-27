@@ -9,6 +9,9 @@ internal sealed class DiscordClientHost : IHostedService
     private readonly ILogger<DiscordClientHost> _logger;
     private readonly IAudioService _audioService;
     private readonly MusicMessageService _musicMessageService;
+    private readonly SemaphoreSlim _readyLock = new(1, 1);
+    private bool _modulesAdded;
+    private bool _commandsRegistered;
 
     public DiscordClientHost(
         DiscordSocketClient discordSocketClient,
@@ -57,27 +60,121 @@ internal sealed class DiscordClientHost : IHostedService
         await _discordSocketClient.StopAsync().ConfigureAwait(false);
     }
 
-    private Task InteractionCreated(SocketInteraction interaction)
+    private async Task InteractionCreated(SocketInteraction interaction)
     {
         var interactionContext = new SocketInteractionContext(_discordSocketClient, interaction);
-        return _interactionService.ExecuteCommandAsync(interactionContext, _serviceProvider);
+
+        try
+        {
+            var result = await _interactionService
+                .ExecuteCommandAsync(interactionContext, _serviceProvider)
+                .ConfigureAwait(false);
+
+            if (result.IsSuccess)
+            {
+                return;
+            }
+
+            _logger.LogWarning(
+                "Interaction {InteractionName} failed: {Error} {ErrorReason}",
+                GetInteractionName(interaction),
+                result.Error,
+                result.ErrorReason);
+
+            await TrySendInteractionErrorAsync(
+                interaction,
+                "That command could not be completed. Please try again.")
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Unhandled exception while executing interaction {InteractionName}.",
+                GetInteractionName(interaction));
+
+            await TrySendInteractionErrorAsync(
+                interaction,
+                "Something went wrong while handling that command. Please try again.")
+                .ConfigureAwait(false);
+        }
     }
 
     private async Task ClientReady()
     {
-        await _interactionService.AddModulesAsync(Assembly.GetExecutingAssembly(), _serviceProvider).ConfigureAwait(false);
-
-        var servers = _configuration.GetSection("Servers").Get<string[]>();
-
-        foreach (var serverId in servers!)
+        await _readyLock.WaitAsync().ConfigureAwait(false);
+        try
         {
-            if (ulong.TryParse(serverId, out var guildId))
-                await _interactionService.RegisterCommandsToGuildAsync(guildId).ConfigureAwait(false);
+            if (!_modulesAdded)
+            {
+                await _interactionService
+                    .AddModulesAsync(Assembly.GetExecutingAssembly(), _serviceProvider)
+                    .ConfigureAwait(false);
+                _modulesAdded = true;
+            }
+
+            if (!_commandsRegistered)
+            {
+                await _interactionService.RegisterCommandsGloballyAsync().ConfigureAwait(false);
+                _commandsRegistered = true;
+                _logger.LogInformation("Discord interaction commands registered.");
+            }
         }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to initialize Discord interaction commands.");
+        }
+        finally
+        {
+            _readyLock.Release();
+        }
+    }
+
+    private async Task TrySendInteractionErrorAsync(SocketInteraction interaction, string message)
+    {
+        try
+        {
+            if (interaction.HasResponded)
+            {
+                if (interaction.Type == InteractionType.ApplicationCommand)
+                {
+                    await interaction.ModifyOriginalResponseAsync(properties =>
+                    {
+                        properties.Content = message;
+                        properties.Components = new ComponentBuilder().Build();
+                    }).ConfigureAwait(false);
+                    return;
+                }
+
+                await interaction.FollowupAsync(message, ephemeral: true).ConfigureAwait(false);
+                return;
+            }
+
+            await interaction.RespondAsync(message, ephemeral: true).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to send interaction error response for interaction {InteractionId}.", interaction.Id);
+        }
+    }
+
+    private static string GetInteractionName(SocketInteraction interaction)
+    {
+        return interaction switch
+        {
+            SocketSlashCommand command => command.CommandName,
+            SocketMessageComponent component => component.Data.CustomId,
+            _ => interaction.Id.ToString()
+        };
     }
 
     private Task OnTrackStarted(object sender, Lavalink4NET.Events.Players.TrackStartedEventArgs eventArgs)
     {
+        _logger.LogInformation(
+            "Track started in guild {GuildId}: {TrackTitle}",
+            eventArgs.Player.GuildId,
+            eventArgs.Player.CurrentTrack?.Title ?? "unknown track");
+
         return UpdateGuildPlayerMessageAsync(eventArgs.Player);
     }
 
@@ -98,16 +195,14 @@ internal sealed class DiscordClientHost : IHostedService
 
         try
         {
-            bool showQueueRemoveButtons = _configuration.GetValue<ulong>("AdminUserId") != 0;
             int upcomingCount = Math.Min(4, votePlayer.Queue.Count);
             string content = MusicStatusBuilder.BuildStatusContent(
                 votePlayer,
-                showQueueRemoveHints: showQueueRemoveButtons);
+                showQueueRemoveHints: upcomingCount > 0);
             var components = MusicControlsBuilder.BuildControls(
                 isPaused: votePlayer.State == PlayerState.Paused,
                 isRepeating: votePlayer.RepeatMode == TrackRepeatMode.Track,
-                upcomingCount: upcomingCount,
-                showQueueRemoveButtons: showQueueRemoveButtons);
+                upcomingCount: upcomingCount);
 
             await _musicMessageService.UpdateByGuildAsync(
                 _discordSocketClient,

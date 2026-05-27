@@ -4,18 +4,15 @@ public sealed class MusicInteractionService
 {
     private readonly IAudioService _audioService;
     private readonly MusicMessageService _messageService;
-    private readonly IConfiguration _configuration;
     private readonly ILogger<MusicInteractionService> _logger;
 
     public MusicInteractionService(
         IAudioService audioService,
         MusicMessageService messageService,
-        IConfiguration configuration,
         ILogger<MusicInteractionService> logger)
     {
         _audioService = audioService ?? throw new ArgumentNullException(nameof(audioService));
         _messageService = messageService ?? throw new ArgumentNullException(nameof(messageService));
-        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -50,6 +47,15 @@ public sealed class MusicInteractionService
     {
         if (context.Interaction.HasResponded)
         {
+            if (context.Interaction.Type == InteractionType.ApplicationCommand)
+            {
+                return context.Interaction.ModifyOriginalResponseAsync(properties =>
+                {
+                    properties.Content = message;
+                    properties.Components = new ComponentBuilder().Build();
+                });
+            }
+
             return context.Interaction.FollowupAsync(message, ephemeral: true);
         }
 
@@ -82,27 +88,17 @@ public sealed class MusicInteractionService
         VoteLavalinkPlayer player,
         string? header = null)
     {
-        bool showQueueRemoveButtons = IsAdminConfigured();
         int upcomingCount = Math.Min(4, player.Queue.Count);
         string content = MusicStatusBuilder.BuildStatusContent(
             player,
             header,
-            showQueueRemoveHints: showQueueRemoveButtons);
+            showQueueRemoveHints: upcomingCount > 0);
 
         var components = MusicControlsBuilder.BuildControls(
             isPaused: player.State == PlayerState.Paused,
             isRepeating: player.RepeatMode == TrackRepeatMode.Track,
-            upcomingCount: upcomingCount,
-            showQueueRemoveButtons: showQueueRemoveButtons);
+            upcomingCount: upcomingCount);
 
         await _messageService.SendOrUpdateAsync(context, content, components);
     }
-
-    public bool IsAdminUser(ulong userId)
-    {
-        ulong adminUserId = _configuration.GetValue<ulong>("AdminUserId");
-        return adminUserId != 0 && userId == adminUserId;
-    }
-
-    public bool IsAdminConfigured() => _configuration.GetValue<ulong>("AdminUserId") != 0;
 }
