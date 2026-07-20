@@ -1,4 +1,6 @@
-﻿[RequireContext(ContextType.Guild)]
+﻿namespace LavaLinkLouieBot.Commands;
+
+[RequireContext(ContextType.Guild)]
 public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext>
 {
     private readonly IAudioService _audioService;

@@ -1,4 +1,4 @@
-using LavaLinkLouieBot.Helpers;
+using LavaLinkLouieBot.Ui;
 using Xunit;
 
 namespace LavaLinkLouieBot.Tests;

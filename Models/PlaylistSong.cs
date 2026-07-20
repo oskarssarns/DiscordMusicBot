@@ -1,5 +1,5 @@
 ﻿namespace LavaLinkLouieBot.Models;
-public class Song
+public class PlaylistSong
 {
     public int Id { get; set; }
     public string? Name { get; set; }

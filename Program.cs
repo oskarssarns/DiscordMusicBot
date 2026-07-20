@@ -1,6 +1,4 @@
-﻿using LavaLinkLouieBot;
-
-var builder = Host.CreateDefaultBuilder(args)
+﻿var builder = Host.CreateDefaultBuilder(args)
     .ConfigureAppConfiguration((context, config) =>
     {
         config.SetBasePath(Directory.GetCurrentDirectory())
@@ -62,9 +60,9 @@ var builder = Host.CreateDefaultBuilder(args)
         services.AddLavalink();
         services.ConfigureLavalink(options =>
         {
-            var server = LavaLinkHelper.GetLavalinkServerConfiguration(configuration)
-                                       .GetAwaiter()
-                                       .GetResult();
+            var server = LavalinkConfigProvider.GetLavalinkServerConfiguration(configuration)
+                                                .GetAwaiter()
+                                                .GetResult();
 
             Console.WriteLine($"Selected Lavalink server: {server.BaseAddress}");
             options.BaseAddress = new Uri(server.BaseAddress!);

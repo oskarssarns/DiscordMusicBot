@@ -1,4 +1,4 @@
-﻿namespace LavaLinkLouieBot;
+﻿namespace LavaLinkLouieBot.Discord;
 
 internal sealed class DiscordClientHost : IHostedService
 {

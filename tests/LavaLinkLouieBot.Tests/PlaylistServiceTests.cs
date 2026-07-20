@@ -1,5 +1,5 @@
 using LavaLinkLouieBot.Data;
-using LavaLinkLouieBot.Helpers;
+using LavaLinkLouieBot.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;

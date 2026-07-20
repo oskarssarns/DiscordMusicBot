@@ -2,10 +2,13 @@
 global using Microsoft.Extensions.Hosting;
 global using LavaLinkLouieBot.Data;
 global using LavaLinkLouieBot.Models;
+global using LavaLinkLouieBot.Discord;
+global using LavaLinkLouieBot.Lavalink;
+global using LavaLinkLouieBot.Services;
+global using LavaLinkLouieBot.Ui;
 global using Discord.Interactions;
 global using Discord.WebSocket;
 global using Lavalink4NET.Extensions;
-global using LavaLinkLouieBot.Helpers;
 global using Microsoft.EntityFrameworkCore;
 global using Microsoft.Extensions.Configuration;
 global using Microsoft.Extensions.Logging;
@@ -22,7 +25,7 @@ global using Discord;
 global using System.Text.RegularExpressions;
 global using Lavalink4NET.Clients;
 
-namespace LavaLinkLouieBot.Helpers;
+namespace LavaLinkLouieBot.Common;
 internal class Usings
 {
 }
