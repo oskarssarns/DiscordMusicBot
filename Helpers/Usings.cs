@@ -19,8 +19,6 @@ global using Lavalink4NET.Rest.Entities.Tracks;
 global using Lavalink4NET.Tracks;
 global using System.Reflection;
 global using Discord;
-global using Newtonsoft.Json.Linq;
-global using System.Net.Sockets;
 global using System.Text.RegularExpressions;
 global using Lavalink4NET.Clients;
 
