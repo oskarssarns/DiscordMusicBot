@@ -122,8 +122,8 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
         await _playbackService.ChangeSpeedAsync(Context, speed);
     }
 
-    [SlashCommand("play", "Plays music", runMode: RunMode.Async)]
-    public async Task Play(string query)
+    [SlashCommand("play", "Plays a YouTube link or search by name", runMode: RunMode.Async)]
+    public async Task Play([Summary("query-or-name", "YouTube link or song name")] string query)
     {
         await DeferAsync(ephemeral: true);
         await _playbackService.PlayAsync(Context, query);
