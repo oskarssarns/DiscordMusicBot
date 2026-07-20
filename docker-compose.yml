@@ -1,13 +1,32 @@
 services:
+  lavalink:
+    image: ghcr.io/lavalink-devs/lavalink:4-alpine
+    restart: unless-stopped
+    environment:
+      _JAVA_OPTIONS: ${LAVALINK_JAVA_OPTIONS:--Xmx768m}
+      SERVER_PORT: 2333
+      LAVALINK_SERVER_PASSWORD: ${LAVALINK_PASSWORD:-change_this_lavalink_password}
+      LAVALINK_SERVER_SOURCES_YOUTUBE: "false"
+      LAVALINK_SERVER_SOURCES_SOUNDCLOUD: "true"
+      LAVALINK_SERVER_SOURCES_HTTP: "true"
+      LAVALINK_SERVER_FILTERS_VOLUME: "true"
+      LAVALINK_SERVER_FILTERS_TIMESCALE: "true"
+      LAVALINK_PLUGINS_0_DEPENDENCY: dev.lavalink.youtube:youtube-plugin:1.18.1
+      LAVALINK_PLUGINS_0_SNAPSHOT: "false"
+    expose:
+      - "2333"
+
   bot:
     build:
       context: .
     image: lavalink-louie-bot:local
     restart: unless-stopped
+    depends_on:
+      - lavalink
     environment:
       BotToken: ${BOT_TOKEN:?Set BOT_TOKEN in .env}
-      LavaLinkSource: ${LAVALINK_SOURCE:-https://lavalink-list.ajieblogs.eu.org/All}
-      MaxLavalinkPingMs: ${MAX_LAVALINK_PING_MS:-200}
+      LavalinkBaseAddress: http://lavalink:2333
+      LavalinkPassphrase: ${LAVALINK_PASSWORD:-change_this_lavalink_password}
       TestQuery: ${TEST_QUERY:-https://www.youtube.com/watch?v=dQw4w9WgXcQ}
       PlaybackSelfTestQuery: ${PLAYBACK_SELF_TEST_QUERY:-}
       PlaybackSelfTestVoiceChannelId: ${PLAYBACK_SELF_TEST_VOICE_CHANNEL_ID:-}
