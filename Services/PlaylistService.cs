@@ -1,4 +1,4 @@
-namespace LavaLinkLouieBot.Helpers;
+namespace LavaLinkLouieBot.Services;
 
 public sealed class PlaylistService
 {
@@ -16,14 +16,14 @@ public sealed class PlaylistService
         string normalizedPlaylist = playlist.Trim();
         string normalizedQuery = query.Trim();
 
-        bool exists = await _dbContext.louie_bot_playlists
+        bool exists = await _dbContext.PlaylistSongs
             .AnyAsync(s => s.Playlist == normalizedPlaylist && s.Link == normalizedQuery);
         if (exists)
         {
             return false;
         }
 
-        var song = new Song
+        var song = new PlaylistSong
         {
             Name = title,
             Link = normalizedQuery,
@@ -32,7 +32,7 @@ public sealed class PlaylistService
             Created = DateTime.UtcNow
         };
 
-        await _dbContext.louie_bot_playlists.AddAsync(song);
+        await _dbContext.PlaylistSongs.AddAsync(song);
         await _dbContext.SaveChangesAsync();
 
         _logger.LogInformation(
@@ -44,23 +44,23 @@ public sealed class PlaylistService
         return true;
     }
 
-    public async Task<List<Song>> GetShuffledPlaylistSongsAsync(string playlist)
+    public async Task<List<PlaylistSong>> GetShuffledPlaylistSongsAsync(string playlist)
     {
         string normalizedPlaylist = playlist.Trim();
 
-        var songs = await _dbContext.louie_bot_playlists
+        var songs = await _dbContext.PlaylistSongs
             .Where(s => s.Playlist == normalizedPlaylist)
             .ToListAsync();
 
         return songs.OrderBy(_ => Guid.NewGuid()).ToList();
     }
 
-    public async Task<Song?> RemoveTrackAsync(string playlist, string query)
+    public async Task<PlaylistSong?> RemoveTrackAsync(string playlist, string query)
     {
         string normalizedPlaylist = playlist.Trim();
         string normalizedQuery = query.Trim();
 
-        var song = await _dbContext.louie_bot_playlists
+        var song = await _dbContext.PlaylistSongs
             .FirstOrDefaultAsync(s =>
                 s.Playlist == normalizedPlaylist &&
                 (s.Link == normalizedQuery || s.Name == normalizedQuery));
@@ -70,7 +70,7 @@ public sealed class PlaylistService
             return null;
         }
 
-        _dbContext.louie_bot_playlists.Remove(song);
+        _dbContext.PlaylistSongs.Remove(song);
         await _dbContext.SaveChangesAsync();
 
         _logger.LogInformation(

@@ -3,11 +3,11 @@ public class MusicDbContext : DbContext
 {
     public MusicDbContext(DbContextOptions<MusicDbContext> options) : base(options) { }
 
-    public DbSet<Song> louie_bot_playlists { get; set; }
+    public DbSet<PlaylistSong> PlaylistSongs { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<Song>(entity =>
+        modelBuilder.Entity<PlaylistSong>(entity =>
         {
             entity.ToTable("louie_bot_playlists");
             entity.Property(song => song.Name).IsRequired();

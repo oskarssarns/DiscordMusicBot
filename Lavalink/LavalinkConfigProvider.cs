@@ -1,6 +1,6 @@
-﻿namespace LavaLinkLouieBot.Helpers;
+﻿namespace LavaLinkLouieBot.Lavalink;
 
-public static class LavaLinkHelper
+public static class LavalinkConfigProvider
 {
     public static Task<LavalinkServerConfig> GetLavalinkServerConfiguration(IConfiguration configuration)
     {

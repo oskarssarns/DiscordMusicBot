@@ -27,9 +27,6 @@ services:
       BotToken: ${BOT_TOKEN:?Set BOT_TOKEN in .env}
       LavalinkBaseAddress: http://lavalink:2333
       LavalinkPassphrase: ${LAVALINK_PASSWORD:-change_this_lavalink_password}
-      TestQuery: ${TEST_QUERY:-https://www.youtube.com/watch?v=dQw4w9WgXcQ}
-      PlaybackSelfTestQuery: ${PLAYBACK_SELF_TEST_QUERY:-}
-      PlaybackSelfTestVoiceChannelId: ${PLAYBACK_SELF_TEST_VOICE_CHANNEL_ID:-}
       ConnectionStrings__DefaultConnection: Data Source=/data/musicbot.db
     volumes:
       - musicbot-data:/data

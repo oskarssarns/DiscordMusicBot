@@ -1,4 +1,4 @@
-namespace LavaLinkLouieBot.Helpers;
+namespace LavaLinkLouieBot.Services;
 
 public sealed class PlaybackService
 {

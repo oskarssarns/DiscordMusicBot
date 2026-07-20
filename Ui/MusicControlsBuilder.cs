@@ -1,4 +1,4 @@
-﻿namespace LavaLinkLouieBot.Helpers;
+﻿namespace LavaLinkLouieBot.Ui;
 
 public static class MusicControlsBuilder
 {
