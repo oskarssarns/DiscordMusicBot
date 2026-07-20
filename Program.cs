@@ -71,7 +71,6 @@ var builder = Host.CreateDefaultBuilder(args)
             options.Passphrase = server.Passphrase;
         });
         services.AddHostedService<DiscordClientHost>();
-        services.AddHostedService<PlaybackSelfTestService>();
     }).UseConsoleLifetime();
 
 var app = builder.Build();
