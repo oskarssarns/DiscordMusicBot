@@ -7,17 +7,20 @@ public sealed class PlaybackService
     private readonly IAudioService _audioService;
     private readonly MusicInteractionService _interactionService;
     private readonly MusicMessageService _messageService;
+    private readonly PlaybackSourceService _playbackSourceService;
     private readonly ILogger<PlaybackService> _logger;
 
     public PlaybackService(
         IAudioService audioService,
         MusicInteractionService interactionService,
         MusicMessageService messageService,
+        PlaybackSourceService playbackSourceService,
         ILogger<PlaybackService> logger)
     {
         _audioService = audioService ?? throw new ArgumentNullException(nameof(audioService));
         _interactionService = interactionService ?? throw new ArgumentNullException(nameof(interactionService));
         _messageService = messageService ?? throw new ArgumentNullException(nameof(messageService));
+        _playbackSourceService = playbackSourceService ?? throw new ArgumentNullException(nameof(playbackSourceService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -56,6 +59,7 @@ public sealed class PlaybackService
             }
 
             await player.PlayAsync(track);
+            _playbackSourceService.Clear(context.Guild.Id);
             await _interactionService.UpdatePlayerStatusMessageAsync(context, player);
             await _interactionService.TryDeleteOriginalResponseAsync(context);
         }
@@ -79,6 +83,7 @@ public sealed class PlaybackService
         }
 
         await player.PlayAsync(track);
+        _playbackSourceService.Clear(context.Guild.Id);
         await _interactionService.UpdatePlayerStatusMessageAsync(context, player);
         await _interactionService.TryDeleteOriginalResponseAsync(context);
     }
@@ -97,6 +102,7 @@ public sealed class PlaybackService
         await player.StopAsync();
         await player.DisconnectAsync();
 
+        _playbackSourceService.Clear(context.Guild.Id);
         await _messageService.SendOrUpdateAsync(context, "⏹ Stopped playback", new ComponentBuilder().Build());
         _messageService.Clear(context.Guild.Id);
         await _interactionService.TryDeleteOriginalResponseAsync(context);
