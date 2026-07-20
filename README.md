@@ -53,12 +53,7 @@ Optional values:
 ```text
 LAVALINK_PASSWORD=change_this_lavalink_password
 LAVALINK_JAVA_OPTIONS=-Xmx768m
-TEST_QUERY=https://www.youtube.com/watch?v=dQw4w9WgXcQ
-PLAYBACK_SELF_TEST_QUERY=
-PLAYBACK_SELF_TEST_VOICE_CHANNEL_ID=
 ```
-
-`PLAYBACK_SELF_TEST_QUERY` and `PLAYBACK_SELF_TEST_VOICE_CHANNEL_ID` can be set together to make the bot run a startup playback test.
 
 ## Running With Docker
 
