@@ -19,6 +19,7 @@ WORKDIR /app
 ENV DOTNET_EnableDiagnostics=0
 
 COPY --from=build /app/publish ./
+RUN mkdir -p /data && chown $APP_UID /data
 
 USER $APP_UID
 ENTRYPOINT ["dotnet", "LavaLinkLouieBot.dll"]

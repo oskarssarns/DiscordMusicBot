@@ -74,9 +74,9 @@ public sealed class MusicStatusBuilderTests
             currentTrackTitle: "Track A",
             speed: 1.0f,
             upcomingTrackTitles: ["B"],
-            header: "🔈 Playlist started");
+            header: "🔈 Playing playlist: party");
 
         var lines = result.Split('\n');
-        Assert.Equal("🔈 Playlist started", lines[0]);
+        Assert.Equal("🔈 Playing playlist: party", lines[0]);
     }
 }

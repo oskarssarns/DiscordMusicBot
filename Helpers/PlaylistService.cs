@@ -13,7 +13,11 @@ public sealed class PlaylistService
 
     public async Task<bool> AddTrackIfMissingAsync(string playlist, string query, string title, string userAdded)
     {
-        bool exists = await _dbContext.louie_bot_playlists.AnyAsync(s => s.Link == query);
+        string normalizedPlaylist = playlist.Trim();
+        string normalizedQuery = query.Trim();
+
+        bool exists = await _dbContext.louie_bot_playlists
+            .AnyAsync(s => s.Playlist == normalizedPlaylist && s.Link == normalizedQuery);
         if (exists)
         {
             return false;
@@ -22,8 +26,8 @@ public sealed class PlaylistService
         var song = new Song
         {
             Name = title,
-            Link = query,
-            Playlist = playlist,
+            Link = normalizedQuery,
+            Playlist = normalizedPlaylist,
             UserAdded = userAdded,
             Created = DateTime.UtcNow
         };
@@ -34,7 +38,7 @@ public sealed class PlaylistService
         _logger.LogInformation(
             "Added track '{Title}' to playlist '{Playlist}' by user '{UserAdded}'.",
             title,
-            playlist,
+            normalizedPlaylist,
             userAdded);
 
         return true;
@@ -42,10 +46,38 @@ public sealed class PlaylistService
 
     public async Task<List<Song>> GetShuffledPlaylistSongsAsync(string playlist)
     {
+        string normalizedPlaylist = playlist.Trim();
+
         var songs = await _dbContext.louie_bot_playlists
-            .Where(s => s.Playlist == playlist)
+            .Where(s => s.Playlist == normalizedPlaylist)
             .ToListAsync();
 
         return songs.OrderBy(_ => Guid.NewGuid()).ToList();
+    }
+
+    public async Task<Song?> RemoveTrackAsync(string playlist, string query)
+    {
+        string normalizedPlaylist = playlist.Trim();
+        string normalizedQuery = query.Trim();
+
+        var song = await _dbContext.louie_bot_playlists
+            .FirstOrDefaultAsync(s =>
+                s.Playlist == normalizedPlaylist &&
+                (s.Link == normalizedQuery || s.Name == normalizedQuery));
+
+        if (song is null)
+        {
+            return null;
+        }
+
+        _dbContext.louie_bot_playlists.Remove(song);
+        await _dbContext.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "Removed track '{Title}' from playlist '{Playlist}'.",
+            song.Name,
+            normalizedPlaylist);
+
+        return song;
     }
 }

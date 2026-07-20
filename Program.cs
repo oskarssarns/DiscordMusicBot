@@ -46,17 +46,18 @@ var builder = Host.CreateDefaultBuilder(args)
 
         services.AddSingleton<MusicMessageService>();
         services.AddSingleton<MusicInteractionService>();
+        services.AddSingleton<PlaybackSourceService>();
         services.AddSingleton<PlaybackService>();
 
         services.AddLogging(x => x.AddConsole().SetMinimumLevel(LogLevel.Information));
 
-        string? connectionString = configuration.GetConnectionString("DefaultConnection");
-        if (!string.IsNullOrWhiteSpace(connectionString))
-        {
-            services.AddDbContext<MusicDbContext>(options =>
-                options.UseSqlServer(connectionString));
-            services.AddScoped<PlaylistService>();
-        }
+        string connectionString = configuration.GetConnectionString("DefaultConnection")
+            ?? "Data Source=musicbot.db";
+        EnsureSqliteDirectoryExists(connectionString);
+
+        services.AddDbContext<MusicDbContext>(options =>
+            options.UseSqlite(connectionString));
+        services.AddScoped<PlaylistService>();
 
         services.AddLavalink();
         services.ConfigureLavalink(options =>
@@ -86,9 +87,26 @@ static async Task InitializeDatabaseAsync(IServiceProvider services)
     var dbContext = scope.ServiceProvider.GetService<MusicDbContext>();
     if (dbContext is null)
     {
-        logger.LogWarning("No database connection string configured. Playlist commands are disabled.");
+        logger.LogWarning("Playlist database is not configured. Playlist commands are disabled.");
         return;
     }
 
     await dbContext.Database.EnsureCreatedAsync();
+    logger.LogInformation("Playlist database is ready.");
+}
+
+static void EnsureSqliteDirectoryExists(string connectionString)
+{
+    var builder = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(connectionString);
+    string dataSource = builder.DataSource;
+    if (string.IsNullOrWhiteSpace(dataSource) || dataSource.Equals(":memory:", StringComparison.OrdinalIgnoreCase))
+    {
+        return;
+    }
+
+    string? directory = Path.GetDirectoryName(Path.GetFullPath(dataSource));
+    if (!string.IsNullOrWhiteSpace(directory))
+    {
+        Directory.CreateDirectory(directory);
+    }
 }

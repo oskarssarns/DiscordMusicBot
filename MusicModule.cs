@@ -6,6 +6,7 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
     private readonly PlaybackService _playbackService;
     private readonly MusicMessageService _messageService;
     private readonly MusicInteractionService _interactionService;
+    private readonly PlaybackSourceService _playbackSourceService;
     private readonly ILogger<MusicModule> _logger;
 
     public MusicModule(
@@ -14,6 +15,7 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
         PlaybackService playbackService,
         MusicMessageService messageService,
         MusicInteractionService interactionService,
+        PlaybackSourceService playbackSourceService,
         ILogger<MusicModule> logger)
     {
         _audioService = audioService ?? throw new ArgumentNullException(nameof(audioService));
@@ -21,13 +23,18 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
         _playbackService = playbackService ?? throw new ArgumentNullException(nameof(playbackService));
         _messageService = messageService ?? throw new ArgumentNullException(nameof(messageService));
         _interactionService = interactionService ?? throw new ArgumentNullException(nameof(interactionService));
+        _playbackSourceService = playbackSourceService ?? throw new ArgumentNullException(nameof(playbackSourceService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     #region Commands
     [SlashCommand("playlistadd", "Adds a playlist entry", runMode: RunMode.Async)]
-    public async Task AddTrackToPlaylist(string playlist, string query)
+    public async Task AddTrackToPlaylist(
+        string playlist,
+        [Summary("query-or-name", "YouTube link or song name")] string query)
     {
+        await DeferAsync(ephemeral: true);
+
         try
         {
             using var scope = _scopeFactory.CreateScope();
@@ -49,22 +56,22 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
 
                 if (isAdded)
                 {
-                    await RespondAsync($"Playlist entry added : {track.Title}");
+                    await _interactionService.SendInteractionMessageAsync(Context, $"Playlist entry added: {track.Title}");
                 }
                 else
                 {
-                    await RespondAsync("Track is already in database!");
+                    await _interactionService.SendInteractionMessageAsync(Context, "Track is already in that playlist.");
                 }
             }
             else
             {
-                await RespondAsync("Failed to load track.");
+                await _interactionService.SendInteractionMessageAsync(Context, "Failed to load track.");
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to add track to playlist '{Playlist}' with query '{Query}'.", playlist, query);
-            await RespondAsync($"An unexpected error occurred: {ex.Message}");
+            await _interactionService.SendInteractionMessageAsync(Context, $"An unexpected error occurred: {ex.Message}");
         }
     }
 
@@ -97,8 +104,46 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
             await player.PlayAsync(track.Link!);
         }
 
-        await _interactionService.UpdatePlayerStatusMessageAsync(Context, player, $"🔈 Playlist started: {playlistSongs[0].Playlist}");
+        _playbackSourceService.SetPlaylist(Context.Guild.Id, playlistSongs[0].Playlist!);
+        await _interactionService.UpdatePlayerStatusMessageAsync(Context, player, $"🔈 Playing playlist: {playlistSongs[0].Playlist}");
         await _interactionService.TryDeleteOriginalResponseAsync(Context);
+    }
+
+    [SlashCommand("playlistremove", "Removes a playlist entry", runMode: RunMode.Async)]
+    public async Task RemoveTrackFromPlaylist(
+        string playlist,
+        [Summary("query-or-name", "Exact YouTube link or saved song title")] string query)
+    {
+        await DeferAsync(ephemeral: true);
+
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var playlistService = scope.ServiceProvider.GetService<PlaylistService>();
+            if (playlistService is null)
+            {
+                await SendPlaylistDatabaseNotConfiguredAsync();
+                return;
+            }
+
+            var removedTrack = await playlistService.RemoveTrackAsync(playlist, query);
+            if (removedTrack is null)
+            {
+                await _interactionService.SendInteractionMessageAsync(
+                    Context,
+                    $"No matching track found in playlist `{playlist}`.");
+                return;
+            }
+
+            await _interactionService.SendInteractionMessageAsync(
+                Context,
+                $"Removed from `{removedTrack.Playlist}`: {removedTrack.Name}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to remove track from playlist '{Playlist}' with query '{Query}'.", playlist, query);
+            await _interactionService.SendInteractionMessageAsync(Context, $"An unexpected error occurred: {ex.Message}");
+        }
     }
 
     [SlashCommand("disconnect", "Disconnects from voice channel", runMode: RunMode.Async)]
@@ -110,6 +155,7 @@ public sealed class MusicModule : InteractionModuleBase<SocketInteractionContext
         if (player is null) return;
 
         await player.DisconnectAsync();
+        _playbackSourceService.Clear(Context.Guild.Id);
         await _messageService.SendOrUpdateAsync(Context, "🔌 Disconnected.", new ComponentBuilder().Build());
         _messageService.Clear(Context.Guild.Id);
         await _interactionService.TryDeleteOriginalResponseAsync(Context);

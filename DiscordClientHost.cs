@@ -9,6 +9,7 @@ internal sealed class DiscordClientHost : IHostedService
     private readonly ILogger<DiscordClientHost> _logger;
     private readonly IAudioService _audioService;
     private readonly MusicMessageService _musicMessageService;
+    private readonly PlaybackSourceService _playbackSourceService;
     private readonly SemaphoreSlim _readyLock = new(1, 1);
     private bool _modulesAdded;
     private bool _commandsRegistered;
@@ -20,7 +21,8 @@ internal sealed class DiscordClientHost : IHostedService
         IConfiguration configuration,
         ILogger<DiscordClientHost> logger,
         IAudioService audioService,
-        MusicMessageService musicMessageService)
+        MusicMessageService musicMessageService,
+        PlaybackSourceService playbackSourceService)
     {
         ArgumentNullException.ThrowIfNull(discordSocketClient);
         ArgumentNullException.ThrowIfNull(interactionService);
@@ -29,6 +31,7 @@ internal sealed class DiscordClientHost : IHostedService
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(audioService);
         ArgumentNullException.ThrowIfNull(musicMessageService);
+        ArgumentNullException.ThrowIfNull(playbackSourceService);
 
         _discordSocketClient = discordSocketClient;
         _interactionService = interactionService;
@@ -37,6 +40,7 @@ internal sealed class DiscordClientHost : IHostedService
         _logger = logger;
         _audioService = audioService;
         _musicMessageService = musicMessageService;
+        _playbackSourceService = playbackSourceService;
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -196,8 +200,10 @@ internal sealed class DiscordClientHost : IHostedService
         try
         {
             int upcomingCount = Math.Min(4, votePlayer.Queue.Count);
+            string? playlist = _playbackSourceService.GetPlaylist(votePlayer.GuildId);
             string content = MusicStatusBuilder.BuildStatusContent(
                 votePlayer,
+                playlist is null ? null : $"🔈 Playing playlist: {playlist}",
                 showQueueRemoveHints: upcomingCount > 0);
             var components = MusicControlsBuilder.BuildControls(
                 isPaused: votePlayer.State == PlayerState.Paused,
